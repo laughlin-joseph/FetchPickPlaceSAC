@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.7.34031.279
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "GymMuJoCoDemo", "GymMuJoCoDemo\GymMuJoCoDemo.pyproj", "{B40BD6BA-E8B7-458C-845A-BEA444701E66}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B40BD6BA-E8B7-458C-845A-BEA444701E66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B40BD6BA-E8B7-458C-845A-BEA444701E66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AB86EFAE-8167-4029-8624-E55A314B25A5}
+	EndGlobalSection
+EndGlobal
