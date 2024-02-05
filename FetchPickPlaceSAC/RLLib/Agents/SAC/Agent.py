@@ -1,16 +1,18 @@
 from copy import deepcopy
 import itertools
+from sys import setdlopenflags
 import numpy as np
 import torch
 from torch.optim import Adam
-import gym
+import gymnasium as gym
 import time
-import spinup.algos.pytorch.sac.core as core
+from FetchPickPlaceSAC.RLLib.Common import SACReplayBuffer
+import RLLib.Agents.SAC.Core as core
 from spinup.utils.logx import EpochLogger
 
 class SAC:
     
-    def __init__(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0, 
+    def __init__(self, env_fn, actor_critic=core.MLPActorCritic | None, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
         polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000, 
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
@@ -23,46 +25,54 @@ class SAC:
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        env, test_env = env_fn(), env_fn()
-        obs_dim = env.observation_space.shape
-        act_dim = env.action_space.shape[0]
+
+        self.env_fn = env_fn
+                
+        self.env = self.env_fn()
+        self.test_env = self.env
+        self.obs_dim = self.env.observation_space.shape
+        self.act_dim = self.env.action_space.shape[0]
 
         # Action limit for clamping: critically, assumes all dimensions share the same bound!
-        act_limit = env.action_space.high[0]
+        self.act_limit = self.env.action_space.high[0]
 
         # Create actor-critic module and target networks
-        ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-        ac_targ = deepcopy(ac)
+        if actor_critic is None:
+            self.ac = actor_critic(self.env.observation_space, self.env.action_space, **ac_kwargs)
+        else:
+            self.ac = actor_critic    
+        
+        self.ac_targ = deepcopy(self.ac)
 
         # Freeze target networks with respect to optimizers (only update via polyak averaging)
-        for p in ac_targ.parameters():
+        for p in self.ac_targ.parameters():
             p.requires_grad = False
         
         # List of parameters for both Q-networks (save this for convenience)
-        q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
+        self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
 
         # Experience buffer
-        replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
+        self.replay_buffer = SACReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=replay_size)
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
         var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
         logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
 
     # Set up function for computing SAC Q-losses
-    def compute_loss_q(data):
+    def compute_loss_q(self, data):
         o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
 
-        q1 = ac.q1(o,a)
-        q2 = ac.q2(o,a)
+        expected_q1 = self.ac.q1(o,a)
+        expected_q2 = self.ac.q2(o,a)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = ac.pi(o2)
+            a2, logp_a2 = self.ac.pi(o2)
 
             # Target Q-values
-            q1_pi_targ = ac_targ.q1(o2, a2)
-            q2_pi_targ = ac_targ.q2(o2, a2)
+            q1_pi_targ = self.ac_targ.q1(o2, a2)
+            q2_pi_targ = self.ac_targ.q2(o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
 

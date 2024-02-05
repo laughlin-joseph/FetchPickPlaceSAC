@@ -50,12 +50,11 @@ class SACReplayBuffer:
         return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in batch.items()}
 
 class SquashedGaussianMLPActor(nn.Module):
-
-    LOG_STD_MAX = 2
-    LOG_STD_MIN = -20
     
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
+        self.LOG_STD_MAX = 2
+        self.LOG_STD_MIN = -20
         self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
@@ -65,7 +64,7 @@ class SquashedGaussianMLPActor(nn.Module):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
-        log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
         std = torch.exp(log_std)
 
         # Pre-squash distribution and sample
