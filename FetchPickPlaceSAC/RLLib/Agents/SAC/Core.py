@@ -1,3 +1,4 @@
+from typing import Self
 import numpy as np
 import scipy.signal
 
@@ -21,6 +22,14 @@ def mlp(sizes, activation, output_activation=nn.Identity):
 def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
 
+def freeze_thaw_parameters(module, freeze=True):
+    if freeze:
+        for p in module.parameters():
+            p.requires_grad = False
+    else:
+        for p in module.parameters():
+            p.requires_grad = True
+            
 class SACReplayBuffer:
 
     def __init__(self, obs_dim, act_dim, size):
@@ -81,15 +90,15 @@ class SquashedGaussianMLPActor(nn.Module):
             # of where it comes from, check out the original SAC paper (arXiv 1801.01290) 
             # and look in appendix C. This is a more numerically-stable equivalent to Eq 21.
             # Try deriving it yourself as a (very difficult) exercise. :)
-            logp_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-            logp_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
+            logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+            logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
         else:
-            logp_pi = None
+            logprob_pi = None
 
         pi_action = torch.tanh(pi_action)
         pi_action = self.act_limit * pi_action
 
-        return pi_action, logp_pi
+        return pi_action, logprob_pi
 
 
 class MLPQFunction(nn.Module):
@@ -104,18 +113,23 @@ class MLPQFunction(nn.Module):
 
 class MLPActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, hidden_sizes=(256,256),
-                 activation=nn.ReLU):
+    def __init__(self, observation_space, action_space, hidden_sizes=(256,256), activation=nn.ReLU):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
-        # build policy and value functions
+        #Build actor, critic1, critic2, targ1, targ2 networksS
         self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, hidden_sizes, activation, act_limit)
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
+        self.q1targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
+        self.q2targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
+        
+        #Freeze target networks, these are updated with a Polyak average.
+        freeze_thaw_parameters(self.q1targ)
+        freeze_thaw_parameters(self.q2targ)
 
     def act(self, obs, deterministic=False):
         with torch.no_grad():
