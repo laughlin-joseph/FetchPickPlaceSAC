@@ -1,36 +1,31 @@
-from copy import deepcopy
-import itertools
-from math import trunc
-from os import truncate
-from sys import setdlopenflags
 import numpy as np
 import torch
-from torch.optim import Adam
-import gymnasium as gym
 import time
 import RLLib.Agents.SAC.Core as core
 '''
 from spinup.utils.logx import EpochLogger
 '''
 
-class SAC:
+class SACAgent:
     
-    def __init__(self, env_fn, actor_critic=core.MLPActorCritic | None, hidden_sizes=dict(), seed=0, 
+    def __init__(self, env_fn, hidden_sizes=(256,256), seed=None, 
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
         polyak=0.995, lr=1e-3, temp=0.2, batch_size=100, start_exploration_steps=10000, 
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
         logger_kwargs=dict(), save_freq=1):
 
         #Set up self
-        self.env, self.test_env = env_fn(), env_fn
+        self.env, self.test_env = env_fn, env_fn
+        
+        #Use seed if one was provided.
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            self.seed = seed
 
         # Create actor critic networks and freeze targets.
-        if actor_critic is None:
-            self.ac = core.MLPActorCritic(self.env.observation_space, self.env.action_space, **hidden_sizes)
-        else:
-            self.ac = actor_critic
+        self.ac = core.MLPActorCritic(self.env.observation_space, self.env.action_space, hidden_sizes)
 
-        self.seed = seed
         self.steps_per_epoch = steps_per_epoch
         self.epochs = epochs
         self.replay_size = replay_size
@@ -47,12 +42,14 @@ class SAC:
         self.save_freq = save_freq
 
         #Optim for trained networks actor, critic1, and critic2
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr)
-        self.q1_optimizer = Adam(self.ac.q1, lr=lr)
-        self.q2_optimizer = Adam(self.ac.q2, lr=lr)
+        self.pi_optimizer = torch.optim.Adam(self.ac.pi.parameters(), lr=lr)
+        self.q1_optimizer = torch.optim.Adam(self.ac.q1.parameters(), lr=lr)
+        self.q2_optimizer = torch.optim.Adam(self.ac.q2.parameters(), lr=lr)
 
         #Experience replay buffer
-        self.replay_buffer = core.SACReplayBuffer(obs_dim=self.env.observation_space.shape, act_dim=self.env.action_space.shape[0], size=replay_size)
+        #TODO: Add a type check function call here for observation checking
+        #there's a mismatch between gym and robotics-gym environment observations.
+        self.replay_buffer = core.SACReplayBuffer(obs_dim=self.env.observation_space['observation'].shape, act_dim=self.env.action_space.shape[0], size=replay_size)
        
         '''
         Do something about logging, use Tensorboard here.
@@ -82,7 +79,7 @@ class SAC:
             q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
             
             #Reward, Discount, Done, Target, Negative Entropy 
-            backup = r + self.gamma * (1 - done) * (q_pi_targ_min - self.alpha * logp_aNext)
+            backup = r + self.gamma * (1 - done) * (q_pi_targ_min - self.temp * logp_aNext)
 
         # MSE loss against Bellman backup
         loss_q1 = ((expected_q1 - backup)**2).mean()
@@ -107,8 +104,8 @@ class SAC:
         q_pi = torch.min(q1_pi, q2_pi)
 
         #Negative entropy-regularized actor value.
-        #-1(q_pi - (self.alpha * logprob_pi)) = (-q_pi + (self.alpha * logprob_pi)) = ((self.alpha * logprob_pi) - q_pi).mean()
-        loss_pi = ((self.alpha * logprob_pi) - q_pi).mean()
+        #-1(q_pi - (self.temp * logprob_pi)) = (-q_pi + (self.temp * logprob_pi)) = ((self.temp * logprob_pi) - q_pi).mean()
+        loss_pi = ((self.temp * logprob_pi) - q_pi).mean()
 
         '''
         Log with tensorboard here.
@@ -138,7 +135,7 @@ class SAC:
         #Now, one GA (ASCENT FOR VALUE) step for the actor.
         self.pi_optimizer.zero_grad()
         #Compute negative actor value for negative gradient descent.
-        loss_pi, = self.compute_negative_value_pi(data)
+        loss_pi = self.compute_negative_value_pi(data)
         #Get partials
         loss_pi.backward()
         #Take GA step for actor net pi
@@ -150,9 +147,10 @@ class SAC:
         
         #Lastly, for the soft part of SAC, Polyak average the Target Q networks.        
         with torch.no_grad():
-            for p, p_targ in [(self.ac.q1, self.ac.q1targ),(self.ac.q2, self.ac.q2targ)]:
-                p_targ.data.mul_(self.polyak)
-                p_targ.data.add_((1 - self.polyak) * p.data)
+            for q, qt in [(self.ac.q1, self.ac.q1targ),(self.ac.q2, self.ac.q2targ)]:
+                for p, p_targ in zip(q.parameters(), qt.parameters()):
+                    p_targ.data.mul_(self.polyak)
+                    p_targ.data.add_((1 - self.polyak) * p.data)
                 
 
     def get_action(self, o, deterministic=False):
@@ -162,7 +160,7 @@ class SAC:
         for j in range(self.num_test_episodes):
             o, terminated, truncated, ep_ret, ep_len = self.test_env.reset(), False, False, 0, 0
             while not(terminated or truncated or (ep_len == self.max_ep_len)):
-                o, r, terminated, truncated = self.test_env.step(self.get_action(o, True))
+                o, r, terminated, truncated = self.test_env.step(self.get_action(o['observation'], True))
                 ep_ret += r
                 ep_len += 1
             
@@ -173,7 +171,7 @@ class SAC:
     def train(self):
         total_steps = self.steps_per_epoch * self.epochs
         start_time = time.time()
-        o, ep_ret, ep_len = self.env.reset(), 0, 0
+        o, info, ep_ret, ep_len = *self.env.reset(), 0, 0
         for t in range(total_steps):
         
             #We start off randomly exploring the environment until
@@ -181,7 +179,7 @@ class SAC:
             if t < self.start_exploration_steps:
                 a = self.env.action_space.sample()
             else:
-                a = self.ac.get_action(o)
+                a = self.get_action(o['observation'])
 
             #Perform action in environment
             oNext, r, terminated, truncated, info = self.env.step(a)
@@ -191,11 +189,10 @@ class SAC:
             #We only want to be done 
             done = False if (ep_len==self.max_ep_len or truncated) else terminated
 
-            # Store experience to replay buffer
-            self.replay_buffer.store(o, a, r, oNext, done)
+            #Send experience to replay buffer
+            self.replay_buffer.store(o['observation'], a, r, oNext['observation'], done)
 
-            # Super critical, easy to overlook step: make sure to update 
-            # most recent observation!
+            #Assign next observation to current
             o = oNext
 
             # End of trajectory handling
@@ -203,7 +200,7 @@ class SAC:
                 '''Consider Tensorboard here.
                 logger.store(EpRet=ep_ret, EpLen=ep_len)
                 '''
-                o, ep_ret, ep_len = self.env.reset(), 0, 0
+                o, info, ep_ret, ep_len = *self.env.reset(), 0, 0
 
             #Update if past initial step threshold and on an update_every multiple
             if t >= self.update_after and t % self.update_every == 0:
@@ -223,7 +220,7 @@ class SAC:
                     '''
 
                 # Test the performance of the deterministic version of the agent.
-                self.test_agent()
+                #self.test_agent()
 
                 '''Use Tensoroboard here and log epoch info
                 logger.log_tabular('Epoch', epoch)
@@ -240,3 +237,8 @@ class SAC:
                 logger.log_tabular('Time', time.time()-start_time)
                 logger.dump_tabular()
                 '''
+    def save_params(self):
+        pass
+   
+    def load_params(self):
+        pass  
