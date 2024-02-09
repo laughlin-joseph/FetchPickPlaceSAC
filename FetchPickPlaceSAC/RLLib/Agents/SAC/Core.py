@@ -28,13 +28,14 @@ def freeze_thaw_parameters(module, freeze=True):
             
 class SACReplayBuffer:
 
-    def __init__(self, obs_dim, act_dim, size):
+    def __init__(self, obs_dim, act_dim, size, device):
         self.obs_buf = np.zeros(combined_shape(size, obs_dim), dtype=np.float32)
         self.obs2_buf = np.zeros(combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
-        self.ptr, self.size, self.max_size = 0, 0, size
+        
+        self.ptr, self.size, self.max_size, self.device = 0, 0, size, device
 
     def store(self, obs, act, rew, next_obs, done):
         self.obs_buf[self.ptr] = obs
@@ -52,7 +53,7 @@ class SACReplayBuffer:
                      act=self.act_buf[indexes],
                      rew=self.rew_buf[indexes],
                      done=self.done_buf[indexes])
-        return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in batch.items()}
+        return {k: torch.as_tensor(v, dtype=torch.float32, device=self.device) for k,v in batch.items()}
 
 class SquashedGaussianMLPActor(nn.Module):
     
@@ -65,14 +66,14 @@ class SquashedGaussianMLPActor(nn.Module):
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_min, self.act_max = act_range[0], act_range[1]
 
-    def forward(self, obs, deterministic=False, with_logprob=True):
+    def forward(self, obs, deterministic=False, with_logprob=True, scale_tanh=False):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
         std = torch.exp(log_std)
 
-        #Pre-squash distribution and sample
+        #Sample reparameterized action 
         pi_distribution = Normal(mu, std)
         if deterministic:
             #Average returned when testing
@@ -80,31 +81,21 @@ class SquashedGaussianMLPActor(nn.Module):
         else:
             pi_action = pi_distribution.rsample()
 
+        pi_action = torch.tanh(pi_action)
+
         if with_logprob:
-            # Compute logprob from Gaussian, and then apply correction for Tanh squashing.
-            # NOTE: The correction formula is a little bit magic. To get an understanding 
-            # of where it comes from, check out the original SAC paper (arXiv 1801.01290) 
-            # and look in appendix C. This is a more numerically-stable equivalent to Eq 21.
-            # Try deriving it yourself as a (very difficult) exercise. :)
-            logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-            logprob_pi -= (2*(np.log(2) - pi_action - nn.functional.softplus(-2*pi_action))).sum(axis=1)
+            #Small constant added to avoid ln(0)
+            logprob_pi = (pi_distribution.log_prob(pi_action) - torch.log(1 - pi_action.pow(2) + 1e-6)).sum(dim=1)
         else:
             logprob_pi = None
-
-
-        #rmin = Min of range of measure
-        #rmax = Max of range of measure
-        #tmin = Min of target range
-        #tmax = Max of target range
-        #measurement is in [rmin,rmax], the measured value to be scaled
-        #tanh has a range of -1 to 1
-        #((measurement - rmin)/(rmax - rmin)) * (tmax - tmin) + tmin
         
-        squish_min, squish_max = -1, 1
-        pi_action = torch.tanh(pi_action)
-        #Scale to action range.
-        pi_action = ((pi_action - squish_min)/(squish_max - squish_min)) * (self.act_max - self.act_min) + self.act_min
-                     
+        if scale_tanh:
+            #Original is in [omin, omax], target is in [tmin,tmax]
+            #Target = ((original - rmin)/(rmax - rmin)) * (tmax - tmin) + tmin
+            squish_min, squish_max = -1, 1
+            #Scale to action range.
+            pi_action = ((pi_action - squish_min)/(squish_max - squish_min)) * (self.act_max - self.act_min) + self.act_min
+        
         return pi_action, logprob_pi
 
 
@@ -141,7 +132,8 @@ class MLPActorCritic(nn.Module):
         freeze_thaw_parameters(self.q1targ)
         freeze_thaw_parameters(self.q2targ)
 
-    def act(self, obs, deterministic=False):
+    def act(self, obs, deterministic=False, scale_action=False):
         with torch.no_grad():
-            a, _ = self.pi(obs, deterministic, False)
+            a, _ = self.pi(obs, deterministic, with_logprob=False, scale_tanh=scale_action)
+            a = a.cpu()
             return a.numpy()

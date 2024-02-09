@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import time
+import gymnasium.spaces as spaces
 import RLLib.Agents.SAC.Core as core
 '''
 from spinup.utils.logx import EpochLogger
@@ -9,10 +10,13 @@ from spinup.utils.logx import EpochLogger
 class SACAgent:
     
     def __init__(self, env_fn, hidden_sizes=(256,256), seed=None, 
-        steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
-        polyak=0.995, lr=1e-3, temp=0.2, batch_size=100, start_exploration_steps=10000, 
-        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
+        steps_per_epoch=2000, epochs=200, replay_size=int(1e7), gamma=0.99, 
+        polyak=0.9995, lr=5e-4, temp_init=0.3, temp_decay=0.2, temp_min=.02, batch_size=100, start_exploration_steps=10000, 
+        update_after=5000, update_every=50, num_test_episodes=10, max_ep_len=500, 
         logger_kwargs=dict(), save_freq=1):
+
+        #Check for CUDA
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         #Set up self
         self.env, self.test_env = env_fn, env_fn
@@ -25,6 +29,7 @@ class SACAgent:
 
         # Create actor critic networks and freeze targets.
         self.ac = core.MLPActorCritic(self.env.observation_space, self.env.action_space, hidden_sizes)
+        self.ac.to(self.device)
 
         self.steps_per_epoch = steps_per_epoch
         self.epochs = epochs
@@ -32,7 +37,9 @@ class SACAgent:
         self.gamma = gamma
         self.polyak = polyak
         self.lr = lr
-        self.temp = temp
+        self.temp_init = temp_init
+        self.temp_decay = temp_decay
+        self.temp_min = temp_min
         self.batch_size = batch_size
         self.start_exploration_steps = start_exploration_steps
         self.update_after = update_after
@@ -47,12 +54,12 @@ class SACAgent:
         self.q2_optimizer = torch.optim.Adam(self.ac.q2.parameters(), lr=lr)
 
         #Experience replay buffer
-        #TODO: Add a type check function call here for observation checking
-        #there's a mismatch between gym and robotics-gym environment observations.
-        self.replay_buffer = core.SACReplayBuffer(obs_dim=self.env.observation_space['observation'].shape, act_dim=self.env.action_space.shape[0], size=replay_size)
+        self.obsDim = self.env.observation_space['observation'].shape if isinstance(self.env.observation_space, spaces.dict.Dict) else self.env.observation_space.shape
+        self.actDim =  self.env.action_space.shape
+        self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obsDim, act_dim=self.actDim, size=replay_size, device=self.device)
        
         '''
-        Do something about logging, use Tensorboard here.
+        #Do something about logging, use Tensorboard here.
         logger = EpochLogger(**logger_kwargs)
         logger.save_config(locals())
         var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
@@ -153,14 +160,20 @@ class SACAgent:
                     p_targ.data.add_((1 - self.polyak) * p.data)
                 
 
-    def get_action(self, o, deterministic=False):
-        return self.ac.act(torch.as_tensor(o, dtype=torch.float32), deterministic)
+    def get_action(self, o, deterministic=False, scale_action=False):
+        return self.ac.act(torch.as_tensor(o, dtype=torch.float32, device=self.device), deterministic, scale_action)
+
+    def decay_temperature(self, epoch):
+        #Compute annealed temperature using a linear decay schedule
+        annealed_temp = (self.temp_init * np.exp(-self.temp_decay*epoch))+self.temp_min
+        return annealed_temp
 
     def test_agent(self):
         for j in range(self.num_test_episodes):
             o, terminated, truncated, ep_ret, ep_len = self.test_env.reset(), False, False, 0, 0
             while not(terminated or truncated or (ep_len == self.max_ep_len)):
-                o, r, terminated, truncated = self.test_env.step(self.get_action(o['observation'], True))
+                o = o['observation'] if isinstance(o, dict) else o
+                o, r, terminated, truncated = self.test_env.step(self.get_action(o, True))
                 ep_ret += r
                 ep_len += 1
             
@@ -172,6 +185,7 @@ class SACAgent:
         total_steps = self.steps_per_epoch * self.epochs
         start_time = time.time()
         o, info, ep_ret, ep_len = *self.env.reset(), 0, 0
+        o = o['observation'] if isinstance(o, dict) else o
         for t in range(total_steps):
         
             #We start off randomly exploring the environment until
@@ -179,10 +193,12 @@ class SACAgent:
             if t < self.start_exploration_steps:
                 a = self.env.action_space.sample()
             else:
-                a = self.get_action(o['observation'])
+                o = o.reshape(1, self.obsDim[0])
+                a = self.get_action(o).reshape(self.actDim)
 
             #Perform action in environment
             oNext, r, terminated, truncated, info = self.env.step(a)
+            oNext = oNext['observation'] if isinstance(oNext, dict) else oNext
             ep_ret += r
             ep_len += 1
 
@@ -190,7 +206,7 @@ class SACAgent:
             done = False if (ep_len==self.max_ep_len or truncated) else terminated
 
             #Send experience to replay buffer
-            self.replay_buffer.store(o['observation'], a, r, oNext['observation'], done)
+            self.replay_buffer.store(o, a, r, oNext, done)
 
             #Assign next observation to current
             o = oNext
@@ -201,6 +217,7 @@ class SACAgent:
                 logger.store(EpRet=ep_ret, EpLen=ep_len)
                 '''
                 o, info, ep_ret, ep_len = *self.env.reset(), 0, 0
+                o = o['observation'] if isinstance(o, dict) else o
 
             #Update if past initial step threshold and on an update_every multiple
             if t >= self.update_after and t % self.update_every == 0:
@@ -211,6 +228,7 @@ class SACAgent:
             # End of epoch handling
             if (t+1) % self.steps_per_epoch == 0:
                 epoch = (t+1) // self.steps_per_epoch
+                self.temp = self.decay_temperature(epoch)
 
                 # Save model
                 if (epoch % self.save_freq == 0) or (epoch == self.epochs):
