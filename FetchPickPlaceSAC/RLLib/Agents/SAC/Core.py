@@ -117,7 +117,7 @@ class HERReplayBuffer(SACReplayBuffer):
                 case GoalUpdateStrategy.FUTURE:
                     if pos < (sample_end):
                         future_goal = exp['ach']
-                        virtIndexes = np.random.randint(pos+1, high=sample_end, size=self.k)
+                        virtIndexes = np.random.randint(pos+1, high=sample_end+1, size=self.k)
                         for idx in virtIndexes:
                             self.store(process_list[idx]['obs'],
                                        process_list[idx]['act'],
@@ -141,10 +141,10 @@ class HERReplayBuffer(SACReplayBuffer):
 
 class SquashedGaussianMLPActor(nn.Module):
     
-    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes, activation, ent_max, ent_min):
         super().__init__()
-        self.LOG_STD_MAX = 2
-        self.LOG_STD_MIN = -20
+        self.ent_max = ent_max
+        self.ent_min = ent_min
         self.net = mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
@@ -154,7 +154,7 @@ class SquashedGaussianMLPActor(nn.Module):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
-        log_std = torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
+        log_std = torch.clamp(log_std, self.ent_min, self.ent_max)
         std = torch.exp(log_std)
 
         #Sample reparameterized action 
@@ -198,11 +198,11 @@ class MLPQFunction(nn.Module):
 
 class MLPActorCritic(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes=[256,256], activation=nn.ReLU):
+    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes=[256,256], activation=nn.ReLU, ent_max=2, ent_min=-20):
         super().__init__()
 
         #Build actor, critic1, critic2, targ1, targ2 networksS
-        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, act_range, hidden_sizes, activation)
+        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, act_range, hidden_sizes, activation, ent_max, ent_min)
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q1targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
