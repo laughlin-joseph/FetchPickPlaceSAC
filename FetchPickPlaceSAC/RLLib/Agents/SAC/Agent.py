@@ -1,3 +1,4 @@
+from math import e
 import numpy as np
 import torch
 import time
@@ -8,11 +9,10 @@ from spinup.utils.logx import EpochLogger
 '''
 
 class SACAgent:
-    
-    def __init__(self, env_fn, hidden_sizes=(256,256), seed=None, 
-        steps_per_epoch=2000, epochs=200, replay_size=int(1e7), gamma=0.99, 
-        polyak=0.9995, lr=5e-4, temp_init=0.3, temp_decay=0.2, temp_min=.02, batch_size=100, start_exploration_steps=10000, 
-        update_after=5000, update_every=50, num_test_episodes=10, max_ep_len=500, 
+    def __init__(self, env_fn, hidden_sizes=[256,256], seed=None, 
+        steps_per_epoch=2000, epochs=400, replay_size=int(1e6), gamma=0.99, 
+        polyak=0.9995, lr=1e-3, temp_init=0.4, temp_decay=0.0015, temp_min=.25, batch_size=100, start_exploration_steps=5000, 
+        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=100, use_HER=True, HER_ach_goal=0,
         logger_kwargs=dict(), save_freq=1):
 
         #Check for CUDA
@@ -21,6 +21,21 @@ class SACAgent:
         #Set up self
         self.env, self.test_env = env_fn, env_fn
         
+        #Set HER Usage
+        self.use_HER = use_HER
+        self.HER_ach_goal = HER_ach_goal
+        
+        #Configure obs, act, act_range, and goal dims if required for HER
+        #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.
+        self.obs_dim = np.array(self.env.observation_space['observation'].shape) if isinstance(self.env.observation_space, spaces.dict.Dict) else np.array(self.env.observation_space.shape)
+        self.act_dim =  np.array(self.env.action_space.shape)
+        self.act_range = [self.env.action_space.low, self.env.action_space.high]
+        if self.use_HER:
+            self.goal_dim = np.array(self.env.observation_space['desired_goal'].shape)
+            self.net_obs_dim = self.goal_dim + self.obs_dim
+        else:
+            self.net_obs_dim = self.obs_dim
+
         #Use seed if one was provided.
         if seed is not None:
             torch.manual_seed(seed)
@@ -28,7 +43,7 @@ class SACAgent:
             self.seed = seed
 
         # Create actor critic networks and freeze targets.
-        self.ac = core.MLPActorCritic(self.env.observation_space, self.env.action_space, hidden_sizes)
+        self.ac = core.MLPActorCritic(self.net_obs_dim, self.act_dim, self.act_range, hidden_sizes)
         self.ac.to(self.device)
 
         self.steps_per_epoch = steps_per_epoch
@@ -37,6 +52,7 @@ class SACAgent:
         self.gamma = gamma
         self.polyak = polyak
         self.lr = lr
+        self.temp = temp_init
         self.temp_init = temp_init
         self.temp_decay = temp_decay
         self.temp_min = temp_min
@@ -54,9 +70,11 @@ class SACAgent:
         self.q2_optimizer = torch.optim.Adam(self.ac.q2.parameters(), lr=lr)
 
         #Experience replay buffer
-        self.obsDim = self.env.observation_space['observation'].shape if isinstance(self.env.observation_space, spaces.dict.Dict) else self.env.observation_space.shape
-        self.actDim =  self.env.action_space.shape
-        self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obsDim, act_dim=self.actDim, size=replay_size, device=self.device)
+        if self.use_HER:
+            self.replay_buffer = core.HERReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=replay_size,
+                                                      device=self.device, strat=core.GoalUpdateStrategy.FINAL, HER_ach_goal=self.HER_ach_goal, k=4)
+        else:
+            self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=replay_size, device=self.device)
        
         '''
         #Do something about logging, use Tensorboard here.
@@ -70,7 +88,7 @@ class SACAgent:
         '''
         
     def compute_loss_q(self, data):
-        o, a, r, oNext, done = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
+        o, a, r, o_next, done = data['obs'], data['act'], data['rew'], data['o_next'], data['done']
 
         expected_q1 = self.ac.q1(o,a)
         expected_q2 = self.ac.q2(o,a)
@@ -78,11 +96,11 @@ class SACAgent:
         #Compute MBSE
         with torch.no_grad():
             #Get Target/Next action from Target/Next state/observation
-            aNext, logp_aNext = self.ac.pi(oNext)
+            aNext, logp_aNext = self.ac.pi(o_next)
 
             #Compute Target Q-values and take the minimum
-            q1_pi_targ = self.ac.q1targ(oNext, aNext)
-            q2_pi_targ = self.ac.q2targ(oNext, aNext)
+            q1_pi_targ = self.ac.q1targ(o_next, aNext)
+            q2_pi_targ = self.ac.q2targ(o_next, aNext)
             q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
             
             #Reward, Discount, Done, Target, Negative Entropy 
@@ -161,12 +179,17 @@ class SACAgent:
                 
 
     def get_action(self, o, deterministic=False, scale_action=False):
-        return self.ac.act(torch.as_tensor(o, dtype=torch.float32, device=self.device), deterministic, scale_action)
+        shaped = torch.as_tensor(o.reshape(1, *self.net_obs_dim), dtype=torch.float32, device=self.device)
+        action = self.ac.act(shaped, deterministic, scale_action).reshape(*self.act_dim)
+        return action
 
     def decay_temperature(self, epoch):
         #Compute annealed temperature using a linear decay schedule
-        annealed_temp = (self.temp_init * np.exp(-self.temp_decay*epoch))+self.temp_min
+        annealed_temp = max((self.temp_init * np.exp(-self.temp_decay*epoch)),self.temp_min)
         return annealed_temp
+
+    def process():
+        pass
 
     def test_agent(self):
         for j in range(self.num_test_episodes):
@@ -184,8 +207,11 @@ class SACAgent:
     def train(self):
         total_steps = self.steps_per_epoch * self.epochs
         start_time = time.time()
-        o, info, ep_ret, ep_len = *self.env.reset(), 0, 0
-        o = o['observation'] if isinstance(o, dict) else o
+        #Vars for epoch handling, experience, logging
+        obs, info, ep_ret, ep_len = *self.env.reset(), 0, 0
+        o, a, r, o_next, done, dg, ag = [], [], 0, [], 0, [], []
+        o = obs['observation'] if isinstance(obs, dict) else obs
+            
         for t in range(total_steps):
         
             #We start off randomly exploring the environment until
@@ -193,31 +219,48 @@ class SACAgent:
             if t < self.start_exploration_steps:
                 a = self.env.action_space.sample()
             else:
-                o = o.reshape(1, self.obsDim[0])
-                a = self.get_action(o).reshape(self.actDim)
+                if self.use_HER:
+                    cato = np.concatenate((o,dg),0)
+                    a = self.get_action(cato)
+                else:
+                    a = self.get_action(o)
 
             #Perform action in environment
-            oNext, r, terminated, truncated, info = self.env.step(a)
-            oNext = oNext['observation'] if isinstance(oNext, dict) else oNext
+            obsNext, r, terminated, truncated, info = self.env.step(a)
+            
+            if isinstance(obsNext, dict):
+                o_next = obsNext['observation']
+                if self.use_HER:
+                    dg, ag = obsNext['desired_goal'], obsNext['achieved_goal']
+            else:
+                o_next = obsNext
+
+            #Update episode return and length                
             ep_ret += r
             ep_len += 1
 
-            #We only want to be done 
+            #We only want to be done if we hit the goal
             done = False if (ep_len==self.max_ep_len or truncated) else terminated
 
             #Send experience to replay buffer
-            self.replay_buffer.store(o, a, r, oNext, done)
+            if self.use_HER:
+                self.replay_buffer.store(o, a, r, o_next, done, dg, ag)
+            else:
+                self.replay_buffer.store(o, a, r, o_next, done)
 
             #Assign next observation to current
-            o = oNext
+            o = o_next
 
-            # End of trajectory handling
+            #End of episode handling
             if terminated or truncated or (ep_len == self.max_ep_len):
                 '''Consider Tensorboard here.
                 logger.store(EpRet=ep_ret, EpLen=ep_len)
                 '''
-                o, info, ep_ret, ep_len = *self.env.reset(), 0, 0
-                o = o['observation'] if isinstance(o, dict) else o
+                if self.use_HER:
+                   self.replay_buffer.run_goal_update_strategy(ep_len)
+                
+                obs, info, ep_ret, ep_len = *self.env.reset(), 0, 0
+                o = obs['observation'] if isinstance(obs, dict) else o
 
             #Update if past initial step threshold and on an update_every multiple
             if t >= self.update_after and t % self.update_every == 0:
@@ -225,7 +268,7 @@ class SACAgent:
                     batch = self.replay_buffer.sample_batch(self.batch_size)
                     self.update(data=batch)
 
-            # End of epoch handling
+            #End of epoch handling
             if (t+1) % self.steps_per_epoch == 0:
                 epoch = (t+1) // self.steps_per_epoch
                 self.temp = self.decay_temperature(epoch)
