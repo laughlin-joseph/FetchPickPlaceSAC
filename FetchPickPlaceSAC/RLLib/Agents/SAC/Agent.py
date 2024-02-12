@@ -10,10 +10,10 @@ from spinup.utils.logx import EpochLogger
 
 class SACAgent:
     def __init__(self, env_fn, hidden_sizes=[256,256], seed=None, 
-        steps_per_epoch=2000, epochs=200, replay_size=int(1e6), gamma=0.99, 
-        polyak=0.9995, lr=1e-4, temp_init=0.45, temp_min=.2, batch_size=100, start_exploration_steps=5000, 
-        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=100, use_HER=True, HER_ach_goal=0,
-        HER_strat=core.GoalUpdateStrategy.FINAL, logger_kwargs=dict(), save_freq=1, ent_max=2, ent_min=-20):
+        steps_per_epoch=40000, epochs=200, replay_size=int(1e6), gamma=0.99, 
+        polyak=0.9995, lr=1e-4, temp_init=0.1, temp_min=.2, batch_size=100, start_exploration_steps=5000, 
+        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=50, use_HER=True, HER_ach_goal=0,
+        HER_strat=core.GoalUpdateStrategy.FINAL, logger_kwargs=dict(), save_freq=1, log_max=2, log_min=-10):
 
         #Check for CUDA
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -27,14 +27,15 @@ class SACAgent:
         self.HER_strat = HER_strat
         
         #Set min/max entropy log std vals.
-        self.ent_max = ent_max
-        self.ent_min = ent_min
+        self.log_max = log_max
+        self.log_min = log_min
 
         #Configure obs, act, act_range, and goal dims if required for HER
         #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.
         self.obs_dim = np.array(self.env.observation_space['observation'].shape) if isinstance(self.env.observation_space, spaces.dict.Dict) else np.array(self.env.observation_space.shape)
         self.act_dim =  np.array(self.env.action_space.shape)
-        self.act_range = [self.env.action_space.low, self.env.action_space.high]
+        self.act_range = [torch.tensor(self.env.action_space.low, dtype=torch.float32, device=self.device),
+                          torch.tensor(self.env.action_space.high, dtype=torch.float32, device=self.device)]
         if self.use_HER:
             self.goal_dim = np.array(self.env.observation_space['desired_goal'].shape)
             self.net_obs_dim = self.goal_dim + self.obs_dim
@@ -48,7 +49,7 @@ class SACAgent:
             self.seed = seed
 
         # Create actor critic networks and freeze targets.
-        self.ac = core.MLPActorCritic(self.net_obs_dim, self.act_dim, self.act_range, hidden_sizes, ent_max=self.ent_max, ent_min=self.ent_min)
+        self.ac = core.MLPActorCritic(self.net_obs_dim, self.act_dim, self.act_range, hidden_sizes, log_max=self.log_max, log_min=self.log_min)
         self.ac.to(self.device)
 
         self.steps_per_epoch = steps_per_epoch
@@ -57,7 +58,6 @@ class SACAgent:
         self.gamma = gamma
         self.polyak = polyak
         self.lr = lr
-        self.temp = torch.tensor(temp_init, requires_grad=True)
         self.temp_min = temp_min
         self.batch_size = batch_size
         self.start_exploration_steps = start_exploration_steps
@@ -67,11 +67,18 @@ class SACAgent:
         self.max_ep_len = max_ep_len
         self.save_freq = save_freq
 
+        #Temp tuning setup
+        self.log_temp = torch.tensor(np.log(temp_init)).to(self.device)
+        self.log_temp.requires_grad = True
+        # set target entropy to -|A|
+        self.target_entropy = -self.act_dim.shape[0]
+
+
         #Optim for trained networks actor, critic1, and critic2
         self.pi_optimizer = torch.optim.Adam(self.ac.pi.parameters(), lr=lr)
         self.q1_optimizer = torch.optim.Adam(self.ac.q1.parameters(), lr=lr)
         self.q2_optimizer = torch.optim.Adam(self.ac.q2.parameters(), lr=lr)
-        self.temp_optimizer = torch.optim.Adam([self.temp], lr=lr)
+        self.log_temp_optimizer = torch.optim.Adam([self.log_temp], lr=lr)
 
         #Experience replay buffer
         if self.use_HER:
@@ -91,6 +98,10 @@ class SACAgent:
         logger.setup_pytorch_saver(ac)
         '''
         
+    @property
+    def temp(self):
+        return self.log_temp.exp()
+
     def compute_loss_q(self, data):
         o, a, r, o_next, done = data['obs'], data['act'], data['rew'], data['o_next'], data['done']
 
@@ -108,7 +119,7 @@ class SACAgent:
             q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
             
             #Reward, Discount, Done, Target, Negative Entropy 
-            backup = r + self.gamma * (1 - done) * (q_pi_targ_min - self.temp * logp_aNext)
+            backup = r + self.gamma * (1 - done) * (q_pi_targ_min - self.temp.detach() * logp_aNext)
 
         # MSE loss against Bellman backup
         loss_q1 = ((expected_q1 - backup)**2).mean()
@@ -133,8 +144,8 @@ class SACAgent:
         q_pi = torch.min(q1_pi, q2_pi)
 
         #Negative entropy-regularized actor value.
-        #-1(q_pi - (self.temp * logprob_pi)) = (-q_pi + (self.temp * logprob_pi)) = ((self.temp * logprob_pi) - q_pi).mean()
-        loss_pi = ((self.temp * logprob_pi) - q_pi).mean()
+        #-1(q_pi - (temp * logprob_pi)) = (-q_pi + (temp * logprob_pi)) = ((temp * logprob_pi) - q_pi).mean()
+        loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
 
         '''
         Log with tensorboard here.
@@ -170,10 +181,11 @@ class SACAgent:
         #Take GA step for actor net pi
         self.pi_optimizer.step()
 
-        temp_loss = -(self.temp * (logprob_pi + self.ent_min).detach()).mean()
-        self.temp_optimizer.zero_grad()
+#       alpha_loss = (self.alpha * (-log_prob - self.target_entropy).detach()).mean()
+        temp_loss = (self.temp * (-logprob_pi - self.target_entropy).detach()).mean()
+        self.log_temp_optimizer.zero_grad()
         temp_loss.backward()
-        self.temp_optimizer.step()
+        self.log_temp_optimizer.step()
 
         #Unfreeze the Q Networks
         for q in (self.ac.q1, self.ac.q2):

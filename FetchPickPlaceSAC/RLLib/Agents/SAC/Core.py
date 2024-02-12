@@ -1,6 +1,7 @@
 from enum import Enum
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.nn as nn
 from torch.distributions.normal import Normal
 
@@ -141,20 +142,20 @@ class HERReplayBuffer(SACReplayBuffer):
 
 class SquashedGaussianMLPActor(nn.Module):
     
-    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes, activation, ent_max, ent_min):
+    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes, activation, log_max, log_min):
         super().__init__()
-        self.ent_max = ent_max
-        self.ent_min = ent_min
+        self.log_max = log_max
+        self.log_min = log_min
         self.net = mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.act_min, self.act_max = act_range[0], act_range[1]
 
-    def forward(self, obs, deterministic=False, with_logprob=True, scale_tanh=False):
+    def forward(self, obs, deterministic=False, with_logprob=True, scale_tanh=True):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
-        log_std = torch.clamp(log_std, self.ent_min, self.ent_max)
+        log_std = torch.clamp(log_std, self.log_min, self.log_max)
         std = torch.exp(log_std)
 
         #Sample reparameterized action 
@@ -165,20 +166,24 @@ class SquashedGaussianMLPActor(nn.Module):
         else:
             pi_action = pi_distribution.rsample()
 
-        pi_action = torch.tanh(pi_action)
-
         if with_logprob:
-            #Small constant added to avoid ln(0)
-            logprob_pi = (pi_distribution.log_prob(pi_action) - torch.log(1 - pi_action.pow(2) + 1e-6)).sum(dim=1)
+            #Original equation from paper, section C eqn 21.
+            #logprob_pi = ((pi_distribution.log_prob(pi_action).sum(axis=-1) - torch.log(1 - torch.tanh(pi_action).pow(2)))).sum(axis=-1)
+            #Using an equation that is more numerically stable:
+            #https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
+            logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+            logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
         else:
             logprob_pi = None
+        
+        pi_action = torch.tanh(pi_action)
         
         if scale_tanh:
             #Original is in [omin, omax], target is in [tmin,tmax]
             #Target = ((original - rmin)/(rmax - rmin)) * (tmax - tmin) + tmin
             squish_min, squish_max = -1, 1
             #Scale to action range.
-            pi_action = ((pi_action - squish_min)/(squish_max - squish_min)) * (self.act_max - self.act_min) + self.act_min
+            pi_action = (((pi_action - squish_min)/(squish_max - squish_min)) * (self.act_max - self.act_min) + self.act_min)
         
         return pi_action, logprob_pi
 
@@ -198,11 +203,11 @@ class MLPQFunction(nn.Module):
 
 class MLPActorCritic(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes=[256,256], activation=nn.ReLU, ent_max=2, ent_min=-20):
+    def __init__(self, obs_dim, act_dim, act_range, hidden_sizes=[256,256], activation=nn.ReLU, log_max=2, log_min=-20):
         super().__init__()
 
         #Build actor, critic1, critic2, targ1, targ2 networksS
-        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, act_range, hidden_sizes, activation, ent_max, ent_min)
+        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, act_range, hidden_sizes, activation, log_max, log_min)
         self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         self.q1targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)

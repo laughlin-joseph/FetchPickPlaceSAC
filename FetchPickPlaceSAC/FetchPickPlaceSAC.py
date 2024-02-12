@@ -12,8 +12,8 @@ load_agent = False
 param_file_path = ''
 
 #Create a fetch pick and place environment with dense rewards and pass it to a SAC Agent
-#env = gym.make(env_str_sparse, render_mode="human", max_episode_steps=100)
-env = gym.make(env_str_sparse, max_episode_steps=100)
+env = gym.make(env_str_sparse, render_mode="human", max_episode_steps=50)
+#env = gym.make(env_str_sparse, max_episode_steps=50)
 
 #Configure and train SACAgent
 if train_agent:
