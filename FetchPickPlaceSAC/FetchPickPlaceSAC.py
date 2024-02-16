@@ -17,7 +17,7 @@ env = gym.make(env_str_sparse, render_mode="human", max_episode_steps=50)
 
 #Configure and train SACAgent
 if train_agent:
-    Agent = SACAgent(env, HER_strat=core.GoalUpdateStrategy.FUTURE)
+    Agent = SACAgent(env, HER_strat=core.GoalUpdateStrategy.FUTURE, run_tests=True, test_record_video=True)
     Agent.train()
     env.close()
 

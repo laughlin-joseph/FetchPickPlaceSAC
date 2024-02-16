@@ -4,36 +4,14 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.distributions.normal import Normal
-
-def combined_shape(length, shape=None):
-    if shape is None:
-        return (length,)
-    return (length, shape) if np.isscalar(shape) else (length, *shape)
-
-def mlp(sizes, activation, output_activation=nn.Identity):
-    layers = []
-    for j in range(len(sizes)-1):
-        act = activation if j < len(sizes)-2 else output_activation
-        layers += [nn.Linear(sizes[j], sizes[j+1]), act()]
-    return nn.Sequential(*layers)
-
-def count_vars(module):
-    return sum([np.prod(p.shape) for p in module.parameters()])
-
-def freeze_thaw_parameters(module, freeze=True):
-    if freeze:
-        for p in module.parameters():
-            p.requires_grad = False
-    else:
-        for p in module.parameters():
-            p.requires_grad = True
+import RLLib.Util.Functions as util
             
 class SACReplayBuffer:
     def __init__(self, obs_dim, act_dim, size, device):
-        self.obs_buf = np.zeros(combined_shape(size, obs_dim), dtype=np.float32)
-        self.act_buf = np.zeros(combined_shape(size, act_dim), dtype=np.float32)
+        self.obs_buf = np.zeros(util.combined_shape(size, obs_dim), dtype=np.float32)
+        self.act_buf = np.zeros(util.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.o_next_buf = np.zeros(combined_shape(size, obs_dim), dtype=np.float32)
+        self.o_next_buf = np.zeros(util.combined_shape(size, obs_dim), dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         
         self.ptr, self.size, self.max_size, self.device = -1, 0, size, device
@@ -64,13 +42,14 @@ class GoalUpdateStrategy(Enum):
 #HER buffer, see https://arxiv.org/pdf/1707.01495.pdf
 #k is number of virtual copies per replayed step.
 class HERReplayBuffer(SACReplayBuffer):
-    def __init__(self, obs_dim, act_dim, goal_dim, size, device, strat=GoalUpdateStrategy.FINAL, HER_ach_goal=0, k=4):
+    def __init__(self, obs_dim, act_dim, goal_dim, size, device,
+                 strat=GoalUpdateStrategy.FINAL, HER_rew_func=lambda:0, k=4):
         super().__init__(obs_dim, act_dim, size, device)
-        self.desired_goal_buf = np.zeros(combined_shape(size, goal_dim), dtype=np.float32)
-        self.achieved_goal_buf = np.zeros(combined_shape(size, goal_dim), dtype=np.float32)
+        self.desired_goal_buf = np.zeros(util.combined_shape(size, goal_dim), dtype=np.float32)
+        self.achieved_goal_buf = np.zeros(util.combined_shape(size, goal_dim), dtype=np.float32)
         self.strat = strat
         self.k = k
-        self.HER_ach_goal = HER_ach_goal
+        self.HER_rew_func = HER_rew_func
     
     def store(self, obs, act, rew, obs_next, done, desired_goal, achieved_goal):
         SACReplayBuffer.store(self, obs, act, rew, obs_next, done)
@@ -110,7 +89,7 @@ class HERReplayBuffer(SACReplayBuffer):
                 case GoalUpdateStrategy.FINAL:
                     self.store(exp['obs'],
                                exp['act'],
-                               self.HER_ach_goal,
+                               self.HER_rew_func(exp),
                                exp['o_next'],
                                exp['done'],
                                final,exp['ach'])
@@ -122,7 +101,7 @@ class HERReplayBuffer(SACReplayBuffer):
                         for idx in virtIndexes:
                             self.store(process_list[idx]['obs'],
                                        process_list[idx]['act'],
-                                       self.HER_ach_goal,
+                                       self.HER_rew_func(exp),
                                        process_list[idx]['o_next'],
                                        process_list[idx]['done'],
                                        future_goal,
@@ -134,7 +113,7 @@ class HERReplayBuffer(SACReplayBuffer):
                     for idx in virtIndexes:
                         self.store(process_list[idx]['obs'],
                                     process_list[idx]['act'],
-                                    self.HER_ach_goal,
+                                    self.HER_rew_func(exp),
                                     process_list[idx]['o_next'],
                                     process_list[idx]['done'],
                                     ep_goal,
@@ -146,7 +125,7 @@ class SquashedGaussianMLPActor(nn.Module):
         super().__init__()
         self.log_max = log_max
         self.log_min = log_min
-        self.net = mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
+        self.net = util.mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.act_min, self.act_max = act_range[0], act_range[1]
@@ -194,7 +173,7 @@ class MLPQFunction(nn.Module):
         super().__init__()
         
         #Cat obs and act dims for input layer, add hidden layers, add output Q.
-        self.q = mlp(list(obs_dim + act_dim) + list(hidden_sizes) + list([1]), activation)
+        self.q = util.mlp(list(obs_dim + act_dim) + list(hidden_sizes) + list([1]), activation)
 
     def forward(self, obs, act):
         q = self.q(torch.cat([obs, act], dim=-1))
@@ -214,8 +193,8 @@ class MLPActorCritic(nn.Module):
         self.q2targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, activation)
         
         #Freeze target networks, these are updated with a Polyak average.
-        freeze_thaw_parameters(self.q1targ)
-        freeze_thaw_parameters(self.q2targ)
+        util.freeze_thaw_parameters(self.q1targ)
+        util.freeze_thaw_parameters(self.q2targ)
 
     def act(self, obs, deterministic=False, scale_action=False):
         with torch.no_grad():
