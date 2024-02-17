@@ -1,36 +1,34 @@
 #TODO: Turn this into a main function with **kwargs
-from json import load
 import gymnasium as gym
+import os
 from RLLib.Agents.SAC.Agent import SACAgent
 import RLLib.Agents.SAC.Core as core
+import RLLib.Util.Functions as util
 
 env_str_dense = 'FetchPickAndPlaceDense-v2'
 env_str_sparse = 'FetchPickAndPlace-v2'
 
-train_agent = True
 load_agent = False
-param_file_path = ''
+train_agent = True
+agent_file_path = os.path.join(os.getcwd(), 'None', 'SavedModel')
+agent_file_name = 'FetchPickAndPlace-v2'
+ep_len = 50
+Agent = None
 
-#Create a fetch pick and place environment with dense rewards and pass it to a SAC Agent
-env = gym.make(env_str_sparse, render_mode="human", max_episode_steps=50)
-#env = gym.make(env_str_sparse, max_episode_steps=50)
+#Create a fetch pick and place environment.
+#env = gym.make(env_str_sparse, render_mode="human", max_episode_steps=ep_len)
+env = gym.make(env_str_sparse, max_episode_steps=ep_len)
 
-#Configure and train SACAgent
-if train_agent:
-    Agent = SACAgent(env, HER_strat=core.GoalUpdateStrategy.FUTURE, run_tests=True, test_record_video=True)
-    Agent.train()
-    env.close()
-
+#Load saved agent if we want to.
 if load_agent:
-    pass
+    Agent = util.load(agent_file_name, agent_file_path)
+    #Agent.env = env
+    #util.setup_test_env(Agent, 'TestRecordings')
+    #Agent.configure_buffer()
 
-#TODO: Gotta save the agent after training, create a new environment, and test.
-#Now test the agent
-for _ in range(1000):
-    action = Agent.get_action(observation['observation'])
-    observation, reward, terminated, truncated, info = env.step(action)
-
-    if terminated or truncated:
-        observation, info = env.reset()
+#Configure and train SACAgent.
+if train_agent:
+    Agent = SACAgent(env, max_ep_len = ep_len, HER_strat=core.GoalUpdateStrategy.FUTURE, run_tests_and_record=True)
+    Agent.train()
 
 env.close()

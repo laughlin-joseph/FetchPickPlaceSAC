@@ -1,29 +1,27 @@
-from math import e
-import os
-import pickle
 import numpy as np
-import torch
+from threading import Thread
 import time
+import torch
 import gymnasium.spaces as spaces
 import RLLib.Agents.SAC.Core as core
 import RLLib.Util.Functions as util
-import RLLib.Util.Video as video
-import RLLib.Util.EnvWrappers as wrappers
 
 #40000 - default steps_per_epoch
 class SACAgent:
-    def __init__(self, env_fn, hidden_sizes=[512,512], seed=1, 
-                 epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq=5,
+    def __init__(self, env, hidden_sizes=[512,512], seed=1, 
+                 epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq=10,
                  gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, log_max=2, log_min=-10,
-                 batch_size=1024, replay_buffer_size=int(1e6), use_HER=True, HER_rew_func=lambda:0, HER_strat=core.GoalUpdateStrategy.FINAL, HER_k=1,
-                 start_exploration_steps=5000, update_after=10000, update_every_steps=100, run_tests=False,
-                 test_record_video=False, done_at_goal=False):
+                 batch_size=1024, replay_buffer_size=int(1e6), use_HER=True, HER_rew_func=lambda a:0, HER_strat=core.GoalUpdateStrategy.FINAL, HER_k=1,
+                 start_exploration_steps=5000, update_after=10000, update_every_steps=100, 
+                 run_tests_and_record=False, test_every=10, done_at_goal=False):
 
         #Check for CUDA.
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = util.get_device()
 
         #Envs.
-        self.env, self.test_env = env_fn, env_fn
+        self.env = env
+        self.env_name = self.env.spec.id
+        util.set_dirs(self)
         
         #Set HER usage and buffer props.
         self.use_HER = use_HER
@@ -63,11 +61,8 @@ class SACAgent:
         self.start_exploration_steps = start_exploration_steps
         self.update_after = update_after
         self.update_every_steps = update_every_steps
-        
-        #Testing
-        self.run_tests = run_tests
 
-        #Use seed if one was provided.
+        #Set all seeds.
         util.set_seed(seed)
 
         #Temp tuning setup
@@ -87,42 +82,22 @@ class SACAgent:
         self.log_temp_optimizer = torch.optim.Adam([self.log_temp], lr=lr)
 
         #Experience replay buffer.
-        if self.use_HER:
-            self.replay_buffer = core.HERReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size,device=self.device,
-                                                      strat=self.HER_strat, HER_rew_func=self.HER_rew_func, k=self.HER_k)
-        else:
-            self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
+        self.configure_buffer()
 
-        #Environment Wrappers
-        if test_record_video:
-            #self.env = wrappers.ImageEnv(self.env)
-            #Try passing env to video object and call env.render within it.
-            self.video_recorder = video.VideoRecorder(self.seed)
-            self.video_recorder.init()
-        if done_at_goal:
-            #Consider droppng env wrappers, they may not be necessary any longer.
-            self.env = wrappers.DoneOnSuccessWrapper(self.env)
+        #Test env wrap for recording and test data loading.
+        self.run_tests_and_record = run_tests_and_record
+        self.test_every = test_every
+        self.done_at_goal = done_at_goal
+        self.test_count = 0
+        if self.run_tests_and_record:
+            util.setup_test_env(self, 'TestRecordings')
 
-        #Do something about logging, use Tensorboard here.
+        #TODO:Do something about logging, use Tensorboard here.
         #logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
         
     @property
     def temp(self):
         return self.log_temp.exp()
-    
-    @staticmethod
-    def load(filename, folder='SavedModels'):
-        load_dir = os.path.join(os.getcwd(), folder)
-        with open(os.path.join(load_dir, filename), 'rb') as f:
-            agent = pickle.load(f)
-        return agent
-
-    def save(self, filename, folder='SavedModels'):
-        self.save_dir = os.path.join(os.getcwd(), folder)
-        if not os.path.exists(self.save_dir):
-            os.mkdir(self.save_dir)
-        with open(os.path.join(self.save_dir, filename), 'wb+') as f:
-            pickle.dump(self, f)
    
     #Minimize the Bellman residual.
     #Section 4.2 Equation 5 of https://arxiv.org/pdf/1812.05905v2.pdf
@@ -177,11 +152,18 @@ class SACAgent:
         # by pi's output, the reparameterization trick.
         loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
 
-        #Log with tensorboard here.
+        #TODO:Log with tensorboard here.
         #pi_info = dict(LogPi=logp_pi.detach().numpy())
         #logger.store(LossPi=loss_pi.item(), **pi_info)    
         
         return loss_pi, logprob_pi
+    
+    def configure_buffer(self):
+        if self.use_HER:
+            self.replay_buffer = core.HERReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size,device=self.device,
+                                                      strat=self.HER_strat, HER_rew_func=self.HER_rew_func, k=self.HER_k)
+        else:
+            self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
 
     def update(self, data):
         #GD for Q1 and Q2.
@@ -233,49 +215,50 @@ class SACAgent:
         return action
 
     def test_agent(self, epoch):
-        test_reward = 0
-        average_episode_reward = 0
-        
-        obs = self.env.reset()
-        o, a, r, dg= [], [], 0, []
+        #Increment agent test_count
+        self.test_count += 1
+        #Reset test environment.
+        obs, info = self.test_env.reset()
+        a, r, terminated, truncated, dg = [], 0, False, False, []
         o = obs['observation'] if isinstance(obs, dict) else obs
-                    
+
+        #TODO:Log Test Start here
+
+        #Begin testing.
         for _ in range(self.max_ep_len):
-            
             if self.use_HER:
-                dg= o['desired_goal']
+                dg= obs['desired_goal']
                 cato = np.concatenate((o,dg),0)
                 a = self.get_action(cato)
             else:
                 a = self.get_action(o)
             
-            obsNext, r = self.env.step(a)
-            
-            if self.test_record_video:
-                self.video_recorder.record(obsNext)                
-            
-            test_reward += r
-            average_episode_reward += test_reward/self.num_eval_episodes
-                
-            o = obsNext['observation'] if isinstance(obs, dict) else obsNext                
-            if self.use_HER:
-                dg = o['desired_goal']
-                o = np.concatenate((o,dg),0)
-        
-        #Log with Tensorboard here!                
+            obs, r, terminated, truncated, info = self.test_env.step(a)             
+            o = obs['observation'] if isinstance(obs, dict) else obs
 
-        if self.test_record_video:        
-            self.video_recorder.save(f'{epoch}.mp4')
+            #TODO:Log step vars.
+
+            if self.done_at_goal and info.get('is_success', False):
+                #Log done at goal and break
+                break
+            if terminated or truncated:
+                reason = 'Truncated' if truncated else 'terminated'
+                #Log session end for reason.
+                break
+            
+        #TODO:Log wrapper stats here with Tensorboard!
             
     def train(self):
         total_steps = self.steps_per_epoch * self.epochs
-        start_time = time.time()
-        #Vars for epoch handling, experience, Tensorboard.
-        obs, info, ep_ret, ep_len = *self.env.reset(), 0, 0
-        o, a, r, o_next, done, dg, ag = [], [], 0, [], 0, [], []
+        start_time, epoch = time.time(), 0
+        #TODO:Vars for epoch handling, experience, Tensorboard.
+        obs, info = self.env.reset()
+        ep_ret, ep_len = 0, 0
+        a, r, o_next, done = [], 0, [], 0
+        terminated, truncated, dg, ag = False, False, [], []
         o = obs['observation'] if isinstance(obs, dict) else obs
         if self.use_HER:
-            dg, ag = o['desired_goal'], o['achieved_goal']
+            dg, ag = obs['desired_goal'], obs['achieved_goal']
             
         for t in range(total_steps):
             #We start off randomly exploring the environment until
@@ -306,8 +289,9 @@ class SACAgent:
             ep_len += 1
 
             #We only want to be done if we hit the goal.
-            done = False if (ep_len==self.max_ep_len or truncated) else terminated
-
+            if self.done_at_goal and info.get('is_success', False):
+                done = 1
+                
             #Send experience to replay buffer.
             if self.use_HER:
                 self.replay_buffer.store(o, a, r, o_next, done, dg, ag)
@@ -319,16 +303,17 @@ class SACAgent:
 
             #End of episode handling
             if terminated or truncated or (ep_len == self.max_ep_len):
-                #Consider Tensorboard here.
-                #logger.store(EpRet=ep_ret, EpLen=ep_len)
-
                 #Run HER goal strategy against the most recept episode.
                 if self.use_HER:
                    self.replay_buffer.run_goal_update_strategy(ep_len)
                 
                 #The episode is over, reset the environment.
-                obs, info, ep_ret, ep_len = *self.env.reset(), 0, 0
+                obs, info = self.env.reset()
+                r, terminated, truncated, ep_ret, ep_len = 0, False, False, 0, 0
                 o = obs['observation'] if isinstance(obs, dict) else o
+
+                #TODO:Consider Tensorboard here.
+                #logger.log(info)
 
             #Update if past initial step threshold and on an update_every_steps multiple
             if t >= self.update_after and t % self.update_every_steps == 0:
@@ -336,17 +321,19 @@ class SACAgent:
                     batch = self.replay_buffer.sample_batch(self.batch_size)
                     self.update(data=batch)
 
-            #Increment epoch
             if (t+1) % self.steps_per_epoch == 0:
-                epoch = (t+1) // self.steps_per_epoch
-
-                # Save model
+                #Save model
                 if (epoch % self.save_freq == 0) or (epoch == self.epochs):
-                    self.save(self.seed)
+                    util.save(self, self.env_name)
+                
+                #Test the performance of the deterministic actor.
+                if (epoch % self.test_every == 0) and  self.run_tests_and_record:
+                    self.test_agent(epoch)
+                    #test_thread = Thread(target=self.test_agent, args=(self,epoch))
+                    #test_thread.start()
 
-                # Test the performance of the deterministic version of the agent.
-                if self.run_tests:
-                    self.test_agent(self.seed)
+                #TODO:Use Tensoroboard here and log epoch info
 
-                #Use Tensoroboard here and log epoch info
+                #Increment epoch
+                epoch = (t+1) // self.steps_per_epoch
                 
