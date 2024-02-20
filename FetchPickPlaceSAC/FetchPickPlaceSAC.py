@@ -28,7 +28,7 @@ if load_agent:
 
 #Configure and train SACAgent.
 if train_agent:
-    Agent = SACAgent(env, max_ep_len = ep_len, HER_strat=core.GoalUpdateStrategy.FUTURE, run_tests_and_record=True)
+    Agent = SACAgent(env, max_ep_len = ep_len, HER_strat=core.GoalUpdateStrategy.FUTURE, run_tests_and_record=True, enable_logging=True)
     Agent.train()
 
 env.close()

@@ -88,11 +88,11 @@ class HERReplayBuffer(SACReplayBuffer):
             match self.strat:
                 case GoalUpdateStrategy.FINAL:
                     self.store(exp['obs'],
-                               exp['act'],
-                               self.HER_rew_func(exp),
-                               exp['o_next'],
-                               exp['done'],
-                               final,exp['ach'])
+                                exp['act'],
+                                self.HER_rew_func(exp),
+                                exp['o_next'],
+                                exp['done'],
+                                final,exp['ach'])
                     
                 case GoalUpdateStrategy.FUTURE:
                     if pos < (sample_end):
@@ -100,12 +100,12 @@ class HERReplayBuffer(SACReplayBuffer):
                         virtIndexes = np.random.randint(pos+1, high=sample_end+1, size=self.k)
                         for idx in virtIndexes:
                             self.store(process_list[idx]['obs'],
-                                       process_list[idx]['act'],
-                                       self.HER_rew_func(exp),
-                                       process_list[idx]['o_next'],
-                                       process_list[idx]['done'],
-                                       future_goal,
-                                       process_list[idx]['ach'])
+                                        process_list[idx]['act'],
+                                        self.HER_rew_func(exp),
+                                        process_list[idx]['o_next'],
+                                        process_list[idx]['done'],
+                                        future_goal,
+                                        process_list[idx]['ach'])
                 
                 case GoalUpdateStrategy.EPISODE:
                     ep_goal = exp['ach']
@@ -120,7 +120,22 @@ class HERReplayBuffer(SACReplayBuffer):
                                     process_list[idx]['ach'])
 
 class SquashedGaussianMLPActor(nn.Module):
+    @property
+    def mu(self):
+        return self._mu
+
+    @mu.setter
+    def mu(self, value):
+        self._mu = value
     
+    @property
+    def std(self):
+        return self._std
+
+    @std.setter
+    def std(self, value):
+        self._std = value
+
     def __init__(self, obs_dim, act_dim, act_range, hidden_sizes, activation, log_max, log_min):
         super().__init__()
         self.log_max = log_max
@@ -136,6 +151,9 @@ class SquashedGaussianMLPActor(nn.Module):
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, self.log_min, self.log_max)
         std = torch.exp(log_std)
+
+        self.mu = mu.detach()
+        self.std = std.detach()
 
         #Sample reparameterized action 
         pi_distribution = Normal(mu, std)
