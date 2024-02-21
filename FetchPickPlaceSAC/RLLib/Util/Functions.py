@@ -21,8 +21,15 @@ def count_vars(module):
 def create_summary_writer(agent, log_dir_name='logdata'):
     if not hasattr(agent, 'root_dir') or not agent.root_dir:
        set_dirs(agent)
-    agent.log_data_dir = os.path.join(agent.root_dir, log_dir_name)
-    agent.writer = SummaryWriter(agent.log_data_dir)
+    
+    base_log_dir = os.path.join(agent.root_dir, log_dir_name)
+    agent.log_data_dir = base_log_dir
+    pi_graph_dir = os.path.join(base_log_dir, 'Actor')
+    q_graph_dir = os.path.join(base_log_dir, 'Critic')
+
+    agent.writer = SummaryWriter(base_log_dir)
+    agent.piwriter = SummaryWriter(pi_graph_dir)
+    agent.qwriter = SummaryWriter(q_graph_dir)
 
 def freeze_thaw_parameters(module, freeze=True):
     if freeze:
@@ -75,6 +82,13 @@ def mlp(sizes, activation, output_activation=nn.Identity):
         layers.append(act())
     return nn.Sequential(*layers)
 
+def sample_normal(mu, sigma, n=100):
+    dist = torch.distributions.normal.Normal(mu, sigma)
+    mu_shape = [sv for i, sv in enumerate(mu.shape) if i > 0]
+    sample_shape = combined_shape(n, mu_shape)
+    vals = dist.sample(sample_shape)
+    return vals
+
 def save(agent, filename):
     if not hasattr(agent, 'root_dir') or not agent.root_dir:
         set_dirs(agent)
@@ -118,9 +132,9 @@ def start_tensorboard(logdir):
         board = program.TensorBoard()
         board.configure(argv=[None, '--logdir', logdir])
         board_add = board.launch()
-        print(f"Tensorboard running at: {board_add}")
+        print('\nTensorboard running at: {%s}' % board_add)
         running = True
     except Exception as e:
-        print("Error starting Tensorboard: ", e)
+        print('\nError starting Tensorboard: %s' % e)
     
     return running, board_add

@@ -8,11 +8,12 @@ import RLLib.Util.Functions as util
 
 #40000 - default steps_per_epoch
 class SACAgent:
-    def __init__(self, env, hidden_sizes=[512,512], seed=1, 
+    def __init__(self, env, hidden_sizes=[512,512], seed=1,
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
                  gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, log_max=2, log_min=-10,
-                 batch_size=1024, replay_buffer_size=int(1e6), use_HER=True, HER_rew_func=lambda a:0, HER_strat=core.GoalUpdateStrategy.FINAL, HER_k=1,
-                 start_exploration_steps=5000, update_after_steps=10000, update_every_steps=100, 
+                 batch_size=1024, replay_buffer_size=int(1e6),
+                 use_HER=True, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=core.GoalUpdateStrategy.FUTURE, HER_k=1,
+                 start_exploration_steps=5000, update_after_steps=10000, update_every_steps=100,
                  run_tests_and_record=False, enable_logging=False, test_every_epochs=10, done_at_goal=False):
         
         if enable_logging:
@@ -39,6 +40,7 @@ class SACAgent:
         
         #Set HER usage and buffer props.
         self.use_HER = use_HER
+        self.HER_obs_pr = HER_obs_pr
         self.HER_rew_func = HER_rew_func
         self.HER_strat = HER_strat
         self.HER_k = HER_k
@@ -55,12 +57,24 @@ class SACAgent:
 
         #Configure obs, act, act_range, and goal dims if required for HER.
         #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.
-        self.obs_dim = np.array(self.env.observation_space['observation'].shape) if isinstance(self.env.observation_space, spaces.dict.Dict) else np.array(self.env.observation_space.shape)
+        self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict) or self.env.observation_space.get('desired_goal', None) is None
+        self.obs_dim = np.array(self.env.observation_space.shape) if self.obs_not_dict else np.array(self.env.observation_space['observation'].shape)
         self.act_dim =  np.array(self.env.action_space.shape)
         self.act_range = [torch.tensor(self.env.action_space.low, dtype=torch.float32, device=self.device),
                           torch.tensor(self.env.action_space.high, dtype=torch.float32, device=self.device)]
         if self.use_HER:
-            self.goal_dim = np.array(self.env.observation_space['desired_goal'].shape)
+            if self.obs_not_dict:
+                if self.HER_obs_pr is None:
+                    raise ValueError('Cannot use HER without goal information. HER_obs_pr returns None.')
+                else:
+                    test_ob = torch.rand(tuple(self.obs_dim)).uniform_(-1, 1)
+                    res = self.HER_obs_pr(test_ob)
+                    if not isinstance(res, tuple):
+                        raise ValueError('HER_obs_pr must return a tuple containing 2 numpy arrays: desired goal, and achieved goal.')
+                    self.goal_dim= np.array(res[0].shape)
+            else:
+                self.goal_dim = np.array(self.env.observation_space['desired_goal'].shape)
+            
             self.net_obs_dim = self.goal_dim + self.obs_dim
         else:
             self.net_obs_dim = self.obs_dim
@@ -90,11 +104,10 @@ class SACAgent:
         self.ac.to(self.device)
 
         if self.log:
-            obs_test = torch.rand(tuple(self.net_obs_dim)).uniform_(-100, 100).unsqueeze(0).to(self.device)
+            obs_test = torch.rand(tuple(self.net_obs_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
             act_test = torch.rand(tuple(self.act_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
-            true_t = torch.tensor([True])
-            self.writer.add_graph(self.ac.pi, [obs_test, true_t, true_t, true_t])
-            self.writer.add_graph(self.ac.q1, [obs_test, act_test])
+            self.piwriter.add_graph(self.ac.pi, obs_test)
+            self.qwriter.add_graph(self.ac.q1, [obs_test, act_test])
 
         #Optim for trained networks actor, critic1, and critic2. Optim for temp dual func.
         self.pi_optimizer = torch.optim.Adam(self.ac.pi.parameters(), lr=lr)
@@ -113,15 +126,14 @@ class SACAgent:
         if self.run_tests_and_record:
             util.setup_test_env(self, 'TestRecordings')
 
-        #TODO:Do something about logging, use Tensorboard here.
-        #logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
-
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop('env', None)
         state.pop('test_env', None)
         state.pop('replay_buffer', None)
         state.pop('writer', None)
+        state.pop('piwriter', None)
+        state.pop('qwriter', None)
         return state
 
     def __setstate__(self, state):
@@ -146,7 +158,7 @@ class SACAgent:
         #Dont update the targets here!
         with torch.no_grad():
             #Get Target TD action from next observation.
-            aNext, logp_aNext = self.ac.pi(o_next)
+            aNext, logp_aNext = self.ac.pi(o_next, deterministic=False)
 
             #Compute Target Q-values and take the minimum.
             q1_pi_targ = self.ac.q1targ(o_next, aNext)
@@ -171,7 +183,7 @@ class SACAgent:
     #See Section 4.2 Equations 7, 8, and 9 of https://arxiv.org/pdf/1812.05905v2.pdf
     def compute_loss_pi(self, data):
         o = data['obs']
-        pi, logprob_pi = self.ac.pi(o)
+        pi, logprob_pi = self.ac.pi(o, deterministic=False)
         q1_pi = self.ac.q1(o, pi)
         q2_pi = self.ac.q2(o, pi)
         q_pi = torch.min(q1_pi, q2_pi)
@@ -183,17 +195,13 @@ class SACAgent:
         # noise from a normal distribution then scaled and shifted
         # by pi's output, the reparameterization trick.
         loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
-
-        #TODO:Log with tensorboard here.
-        #pi_info = dict(LogPi=logp_pi.detach().numpy())
-        #logger.store(LossPi=loss_pi.item(), **pi_info)    
         
         return loss_pi, logprob_pi
     
     def configure_buffer(self):
         if self.use_HER:
             self.replay_buffer = core.HERReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size,device=self.device,
-                                                      strat=self.HER_strat, HER_rew_func=self.HER_rew_func, k=self.HER_k)
+                                                      strat=self.HER_strat, HER_obs_pr=self.HER_obs_pr, HER_rew_func=self.HER_rew_func, k=self.HER_k)
         else:
             self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
 
@@ -255,51 +263,47 @@ class SACAgent:
         #Reset test environment.
         obs, info = self.test_env.reset()
         a, r, terminated, truncated, dg = [], 0, False, False, []
-        o = obs['observation'] if isinstance(obs, dict) else obs
-
-        #TODO:Log Test Start here
+        o = obs if self.obs_not_dict else obs['observation']
 
         #Begin testing.
         for _ in range(self.max_ep_len):
             if self.use_HER:
-                dg= obs['desired_goal']
+                if self.obs_not_dict:
+                    res = self.replay_buffer.HER_obs_pr(obs)
+                    dg = res[0]
+                else:
+                    dg = obs['desired_goal']
                 cato = np.concatenate((o,dg),0)
                 a = self.get_action(cato)
             else:
                 a = self.get_action(o)
             
             obs, r, terminated, truncated, info = self.test_env.step(a)             
-            o = obs['observation'] if isinstance(obs, dict) else obs
+            o = obs if self.obs_not_dict else obs['observation']
             ep_rew += r
-
-            #TODO:Log step vars.
 
             if self.done_at_goal and info.get('is_success', False):
                 reason = 'Done'
                 break
             if terminated or truncated:
                 reason = 'Truncated' if truncated else 'Terminated'
-                #Log session end for reason.
                 break
         if reason:
-            print('%s condition reached during testing.' % reason)
+            print('\n%s condition reached during testing.' % reason)
         
         return ep_rew, info
             
     def train(self):
         total_steps = self.steps_per_epoch * self.epochs
         start_time, epoch = datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 0
-        #TODO:Vars for epoch handling, experience, Tensorboard.
-        obs, info = self.env.reset()
+        obs_Next, info = self.env.reset()
         ep_len, ep_q_loss, ep_pi_loss, ep_temp_loss = 0, 0, 0, 0
         a, r, o_next, done = [], 0, [], 0
         test_rew, test_info = 0, None
         terminated, truncated, dg, ag = False, False, [], []
-        o = obs['observation'] if isinstance(obs, dict) else obs
-        if self.use_HER:
-            dg, ag = obs['desired_goal'], obs['achieved_goal']
-            
+        o = obs_Next if self.obs_not_dict else obs_Next['observation']
         for t in range(total_steps):
+
             #We start off randomly exploring the environment until
             #we pass the number of initial exploration steps. 
             if t < self.start_exploration_steps:
@@ -315,16 +319,16 @@ class SACAgent:
                     a = self.get_action(o)
 
             #Perform action in environment.
-            obsNext, r, terminated, truncated, info = self.env.step(a)
+            obs_Next, r, terminated, truncated, info = self.env.step(a)
             
-            #Mujoco gymnasium environments return a dictionary, others arrays.
-            if isinstance(obsNext, dict):
-                o_next = obsNext['observation']
-                #Goals if HER is enabled.
-                if self.use_HER:
-                    dg, ag = obsNext['desired_goal'], obsNext['achieved_goal']
+            #Handle Mujoco environment obs.
+            o_next = obs_Next if self.obs_not_dict else obs_Next['observation']
+            if self.use_HER:
+                if self.obs_not_dict:
+                    res  = self.replay_buffer.HER_obs_pr(obs_Next)
+                    dg, ag = res[0], res[1]
             else:
-                o_next = obsNext
+                dg, ag = obs_Next['desired_goal'], obs_Next['achieved_goal']
 
             #Update episode return and length.                
             ep_len += 1
@@ -343,15 +347,15 @@ class SACAgent:
             o = o_next
 
             #End of episode handling
-            if terminated or truncated or (ep_len == self.max_ep_len):
+            if terminated or truncated or done or (ep_len == self.max_ep_len):
                 #Run HER goal strategy against the most recept episode.
                 if self.use_HER:
                    self.replay_buffer.run_goal_update_strategy(ep_len)
                 
                 #The episode is over, reset the environment.
-                obs, info = self.env.reset()
+                obs_Next, info = self.env.reset()
                 r, terminated, truncated, ep_len = 0, False, False, 0
-                o = obs['observation'] if isinstance(obs, dict) else o
+                o = obs_Next if self.obs_not_dict else obs_Next['observation']
 
             #Update if past initial step threshold and on an update_every_steps multiple
             if t >= self.update_after_steps and t % self.update_every_steps == 0:
@@ -372,16 +376,19 @@ class SACAgent:
                     self.writer.add_video('Recording of latest test:', frames, global_step=epoch, fps=rate)
 
 
-                #TODO:Use Tensoroboard here and log epoch info
                 if self.log:
+                    #Loss Scalars
                     self.writer.add_scalar('Total return', test_rew, global_step=epoch)
-                    self.writer.add_scalar('Total Temp loss', ep_temp_loss, global_step=epoch)
                     self.writer.add_scalars('Actor/Critic loss', {'Actor Loss':ep_pi_loss, 'Critic Loss':ep_q_loss}, global_step=epoch)
-                    
+                    self.writer.add_scalar('Total Temp loss', ep_temp_loss, global_step=epoch)
+                    #Learned Values
                     self.writer.add_scalar('Temp/Alpha', self.temp.detach().item(), global_step=epoch)
                     self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=1), global_step=epoch)
                     self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=1), global_step=epoch)
-                    
+                    #Sample Distribution
+                    histo_vals = util.sample_normal(self.ac.pi.mu, self.ac.pi.std)
+                    self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)
+
                     if not self._tboard_started:
                         running, board_url = util.start_tensorboard(self.log_data_dir)
                         self._tboard_started = running
@@ -392,6 +399,6 @@ class SACAgent:
                 epoch = (t+1) // self.steps_per_epoch
         if self.log:
             finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-            print('Training complete!\nStarted:%s\nFinished:%s' % (start_time, finish_time))
+            print('\nTraining complete!\nStarted:%s\nFinished:%s' % (start_time, finish_time))
             self.writer.close()
                 

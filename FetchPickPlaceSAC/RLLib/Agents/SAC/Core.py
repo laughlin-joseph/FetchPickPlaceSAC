@@ -43,12 +43,13 @@ class GoalUpdateStrategy(Enum):
 #k is number of virtual copies per replayed step.
 class HERReplayBuffer(SACReplayBuffer):
     def __init__(self, obs_dim, act_dim, goal_dim, size, device,
-                 strat=GoalUpdateStrategy.FINAL, HER_rew_func=lambda:0, k=4):
+                 strat=GoalUpdateStrategy.FINAL, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, k=4):
         super().__init__(obs_dim, act_dim, size, device)
         self.desired_goal_buf = np.zeros(util.combined_shape(size, goal_dim), dtype=np.float32)
         self.achieved_goal_buf = np.zeros(util.combined_shape(size, goal_dim), dtype=np.float32)
         self.strat = strat
         self.k = k
+        self.HER_obs_pr = HER_obs_pr
         self.HER_rew_func = HER_rew_func
     
     def store(self, obs, act, rew, obs_next, done, desired_goal, achieved_goal):
@@ -80,7 +81,6 @@ class HERReplayBuffer(SACReplayBuffer):
                                 'des':self.desired_goal_buf[i],
                                 'ach':self.achieved_goal_buf[i]})
 
-        #TODO:Add strategies and take max reward as Agent parameter
         batch_last = batch_size - 1
         sample_end = batch_last - self.k
         final = process_list[batch_last]['ach']
@@ -92,7 +92,8 @@ class HERReplayBuffer(SACReplayBuffer):
                                 self.HER_rew_func(exp),
                                 exp['o_next'],
                                 exp['done'],
-                                final,exp['ach'])
+                                final,
+                                exp['ach'])
                     
                 case GoalUpdateStrategy.FUTURE:
                     if pos < (sample_end):
@@ -147,7 +148,7 @@ class SquashedGaussianMLPActor(nn.Module):
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.act_min, self.act_max = act_range[0], act_range[1]
 
-    def forward(self, obs, deterministic=False, with_logprob=True, scale_tanh=True):
+    def forward(self, obs, deterministic=True, with_logprob=True, scale_tanh=True):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
