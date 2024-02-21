@@ -3,13 +3,11 @@ import gymnasium as gym
 import math
 import numpy as np
 from RLLib.Agents.SAC.Agent import SACAgent
-import RLLib.Agents.SAC.Core as core
-import RLLib.Util.Functions as util
 
 Agent = None
 #env_str = 'FetchPickAndPlace-v2'
 env_str = 'AdroitHandDoorSparse-v1'
-ep_len = 50
+ep_len = 200
 w_HER = True
 HER_obs_proc = lambda obs : (np.array([(math.pi/2)]),np.array([obs[28]]))
 HER_rew_function = lambda exp : 5
