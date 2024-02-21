@@ -1,7 +1,6 @@
 import copy
 import numpy as np
-import subprocess
-import time
+import datetime
 import torch
 import gymnasium.spaces as spaces
 import RLLib.Agents.SAC.Core as core
@@ -91,12 +90,11 @@ class SACAgent:
         self.ac.to(self.device)
 
         if self.log:
-            pass
-            #TODO: Tensorboard, Pytorch, and Anaconda struggle working together, replace with WandB
-            #self.writer.add_graph('Actor/Critic', self.ac)
-            #self.writer.add_graph('Actor/Pi Network',self.ac.pi)
-            #self.writer.add_graph('Critic/Q1 Network',self.ac.q1)
-            #self.writer.add_graph('Critic/Q2 Network',self.ac.q2)
+            obs_test = torch.rand(tuple(self.net_obs_dim)).uniform_(-100, 100).unsqueeze(0).to(self.device)
+            act_test = torch.rand(tuple(self.act_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
+            true_t = torch.tensor([True])
+            self.writer.add_graph(self.ac.pi, [obs_test, true_t, true_t, true_t])
+            self.writer.add_graph(self.ac.q1, [obs_test, act_test])
 
         #Optim for trained networks actor, critic1, and critic2. Optim for temp dual func.
         self.pi_optimizer = torch.optim.Adam(self.ac.pi.parameters(), lr=lr)
@@ -290,7 +288,7 @@ class SACAgent:
             
     def train(self):
         total_steps = self.steps_per_epoch * self.epochs
-        start_time, epoch = time.time(), 0
+        start_time, epoch = datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 0
         #TODO:Vars for epoch handling, experience, Tensorboard.
         obs, info = self.env.reset()
         ep_len, ep_q_loss, ep_pi_loss, ep_temp_loss = 0, 0, 0, 0
@@ -359,11 +357,7 @@ class SACAgent:
             if t >= self.update_after_steps and t % self.update_every_steps == 0:
                 for j in range(self.update_every_steps):
                     batch = self.replay_buffer.sample_batch(self.batch_size)
-                    cur_q_loss, cur_pi_loss, cur_temp_loss = self.update(data=batch)
-                    ep_q_loss += cur_q_loss
-                    ep_pi_loss += cur_pi_loss
-                    ep_temp_loss += cur_temp_loss
-
+                    ep_q_loss, ep_pi_loss, ep_temp_loss = self.update(data=batch)
 
             if (t+1) % self.steps_per_epoch == 0:
                 #Save model
@@ -373,10 +367,9 @@ class SACAgent:
                 #Test the performance of the deterministic actor.
                 if (epoch % self.test_every_epochs == 0) and  self.run_tests_and_record:
                     test_rew, test_info = self.test_agent()
-                    #TODO: Tensorboard, Pytorch, and Anaconda struggle working together, replace with WandB
-                    #video_dir = self.test_env.spec.additional_wrappers[0].kwargs['video_folder']
-                    #file_path = util.find_oldest_file(video_dir, 'mp4')
-                    #self.writer.add_video('Recording of latest test', file_path)
+                    video_dir = self.test_env.spec.additional_wrappers[0].kwargs['video_folder']
+                    frames, rate = util.get_latest_frames(video_dir, 'mp4')
+                    self.writer.add_video('Recording of latest test:', frames, global_step=epoch, fps=rate)
 
 
                 #TODO:Use Tensoroboard here and log epoch info
@@ -398,6 +391,7 @@ class SACAgent:
                 #Increment epoch
                 epoch = (t+1) // self.steps_per_epoch
         if self.log:
-            #Close Tensorboard Writer obj.
+            finish_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            print('Training complete!\nStarted:%s\nFinished:%s' % (start_time, finish_time))
             self.writer.close()
                 

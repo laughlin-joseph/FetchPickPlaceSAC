@@ -140,6 +140,8 @@ class SquashedGaussianMLPActor(nn.Module):
         super().__init__()
         self.log_max = log_max
         self.log_min = log_min
+        self.mu = 0
+        self.std = 0
         self.net = util.mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])

@@ -1,3 +1,4 @@
+import cv2
 from datetime import datetime
 import dill as pickle
 import gymnasium as gym
@@ -33,6 +34,29 @@ def freeze_thaw_parameters(module, freeze=True):
 
 def get_device():
     return 'cuda' if torch.cuda.is_available() else 'cpu'
+
+def get_latest_frames(directory, file_extension):
+    vid_path =  max((os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(file_extension)), 
+                    key=os.path.getmtime, default=None)
+    vid = cv2.VideoCapture(vid_path)
+    
+    if not vid.isOpened():
+        return None
+    fps = vid.get(cv2.CAP_PROP_FPS)
+    frames = []
+    while vid.isOpened():
+        ret, frame = vid.read()        
+        if not ret:
+            break
+        frames.append(frame)
+    vid.release()
+
+    cv2.destroyAllWindows()
+    rgb_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in frames]
+    vid_tensor = torch.from_numpy(np.array(rgb_frames))
+    vid_tensor = vid_tensor.unsqueeze(0).permute(0, 1, 4, 2, 3)
+    
+    return vid_tensor, fps
             
 def load(filename, folder):
     load_dir = os.path.join(os.getcwd(), folder)
@@ -100,8 +124,3 @@ def start_tensorboard(logdir):
         print("Error starting Tensorboard: ", e)
     
     return running, board_add
-
-def find_oldest_file(directory, file_extension):
-    return min((os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(file_extension)),
-               key=os.path.getmtime, default=None)
-    
