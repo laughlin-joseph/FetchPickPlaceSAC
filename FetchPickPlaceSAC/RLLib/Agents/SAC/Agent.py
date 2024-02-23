@@ -163,20 +163,20 @@ class SACAgent:
             expected_q2 = self.ac.q2(o).sum(-1)
             #No backprop through these components, targq params receive soft updates.
             with torch.no_grad():    
-                q1_pi_targ = self.ac.q1targ(o_next)
-                q2_pi_targ = self.ac.q2targ(o_next)
+                q1_pi_targ = self.ac.q1targ((o_next))
+                q2_pi_targ = self.ac.q2targ((o_next))
                 q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
                 logp_a_next = probs_next[0]
                 probs_a_next = probs_next[1]
                 target = (probs_a_next * (q_pi_targ_min - self.temp.detach() * logp_a_next)).sum(-1)
                 backup = r + self.gamma * (1 - done) * target
         else:
-            expected_q1 = self.ac.q1(o,a)
-            expected_q2 = self.ac.q2(o,a)
+            expected_q1 = self.ac.q1((o,a))
+            expected_q2 = self.ac.q2((o,a))
             #No backprop through these components, targq params receive soft updates.
             with torch.no_grad():
-                q1_pi_targ = self.ac.q1targ(o_next, a_next)
-                q2_pi_targ = self.ac.q2targ(o_next, a_next)
+                q1_pi_targ = self.ac.q1targ((o_next, a_next))
+                q2_pi_targ = self.ac.q2targ((o_next, a_next))
                 q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
                 logp_a_next = probs_next[0]
                 target = (q_pi_targ_min - self.temp.detach() * logp_a_next)
@@ -201,7 +201,7 @@ class SACAgent:
             q_pi = torch.min(q1_pi, q2_pi)
             logprob_pi = probs[0]
             pi_probs = probs[1]
-            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi)).sum(dim=1).mean()
+            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi)).sum(axis=1).mean()
         else:
             # Max V(st) = (Q(st, at) - temp * log(pi(at)))
             # by min (temp * log((pi(atR))) - Q(st, atR)
@@ -209,8 +209,8 @@ class SACAgent:
             # Pi outputs a mu and std, actions are selected  by
             # sampling a value from a standard normal distribution.
             # This value is then scaled and shifted by pi's output, the reparameterization trick.
-            q1_pi = self.ac.q1(o, pi_act)
-            q2_pi = self.ac.q2(o, pi_act)
+            q1_pi = self.ac.q1((o, pi_act))
+            q2_pi = self.ac.q2((o, pi_act))
             q_pi = torch.min(q1_pi, q2_pi)
             logprob_pi = probs[0]
             loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
@@ -254,7 +254,7 @@ class SACAgent:
         if self.action_discrete:
             logprob_pi = probs[0]
             pi_probs = probs[1]
-            temp_loss = (pi_probs.detach() * (self.temp * (-logprob_pi - self.target_entropy).detach())).sum(dim=-1).mean()
+            temp_loss = (pi_probs.detach() * (self.temp * (-logprob_pi - self.target_entropy).detach())).sum(axis=-1).mean()
         else:
             logprob_pi = probs[0]
             temp_loss = (self.temp * (-logprob_pi - self.target_entropy).detach()).mean()
@@ -419,8 +419,8 @@ class SACAgent:
                         _, probs = self.ac.pi(test_o, deterministic=False)
                         histo_vals = util.sample_categorical(probs[1])
                     else:
-                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(dim=1), global_step=epoch)
-                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(dim=1), global_step=epoch)
+                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=1), global_step=epoch)
+                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=1), global_step=epoch)
                         histo_vals = util.sample_normal(self.ac.pi.mu, self.ac.pi.std)
                     
                     self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)

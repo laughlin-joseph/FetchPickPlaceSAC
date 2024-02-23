@@ -62,10 +62,10 @@ class HERReplayBuffer(SACReplayBuffer):
     def sample_batch(self, batch_size=50):
         indexes = np.random.randint(0, self.size, size=batch_size)
         desired_goal = self.desired_goal_buf[indexes]
-        batch = dict(obs=np.concatenate((self.obs_buf[indexes], desired_goal), dim=1),
+        batch = dict(obs=np.concatenate((self.obs_buf[indexes], desired_goal), axis=1),
                      act=self.act_buf[indexes],
                      rew=self.rew_buf[indexes],
-                     o_next=np.concatenate((self.o_next_buf[indexes], desired_goal), dim=1),
+                     o_next=np.concatenate((self.o_next_buf[indexes], desired_goal), axis=1),
                      done=self.done_buf[indexes])
         return {k: torch.as_tensor(v, dtype=torch.float32, device=self.device) for k,v in batch.items()}
     
@@ -163,7 +163,7 @@ class SquashedGaussianMLPActor(nn.Module):
             #https://pytorch.org/docs/stable/distributions.html#categorical
             pi_distribution = Categorical(pi_probs)
             if deterministic:
-                pi_action = torch.argmax(pi_probs, dim=-1)
+                pi_action = torch.argmax(pi_probs, axis=-1)
             else:
                 pi_action = pi_distribution.sample()
             #Where pi_probs is zero, replace with a very small number, ln(0) is undefined.
@@ -197,8 +197,8 @@ class SquashedGaussianMLPActor(nn.Module):
                 #logprob_pi = ((pi_distribution.log_prob(pi_action).sum(dim=-1) - torch.log(1 - torch.tanh(pi_action).pow(2)))).sum(dim=-1)
                 #Using an equation that is more numerically stable:
                 #https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
-                logprob_pi = pi_distribution.log_prob(pi_action).sum(dim=-1)
-                logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(dim=1)
+                logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
+                logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
             else:
                 logprob_pi = None
             
@@ -225,7 +225,7 @@ class MLPQFunction(nn.Module):
             q = self.q(obs)
         else:
             act = input[1]
-            q = self.q(torch.cat([obs, act], dim=-1))
+            q = self.q(torch.cat([obs, act], axis=-1))
         
         
         #Reshape val returned from Q network MLP.
