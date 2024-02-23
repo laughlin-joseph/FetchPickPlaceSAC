@@ -6,7 +6,6 @@ import gymnasium.spaces as spaces
 import RLLib.Agents.SAC.Core as core
 import RLLib.Util.Functions as util
 
-#40000 - default steps_per_epoch
 class SACAgent:
     def __init__(self, env, hidden_sizes=[512,512], seed=1,
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
@@ -55,13 +54,11 @@ class SACAgent:
         self.log_max = log_max
         self.log_min = log_min
 
-        #Configure obs, act, act_range, and goal dims if required for HER.
-        #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.
-        self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict) or self.env.observation_space.get('desired_goal', None) is None
-        self.obs_dim = np.array(self.env.observation_space.shape) if self.obs_not_dict else np.array(self.env.observation_space['observation'].shape)
-        self.act_dim =  np.array(self.env.action_space.shape)
-        self.act_range = [torch.tensor(self.env.action_space.low, dtype=torch.float32, device=self.device),
-                          torch.tensor(self.env.action_space.high, dtype=torch.float32, device=self.device)]
+        #Configure obs, act, and goal dims if required for HER.
+        #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.        
+        self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict)
+        self.obs_dim, self.act_dim = util.get_environment_shape(self)
+
         if self.use_HER:
             if self.obs_not_dict:
                 if self.HER_obs_pr is None:
@@ -96,18 +93,25 @@ class SACAgent:
         #Temp tuning setup
         self.log_temp = torch.tensor(np.log(self.temp_init)).to(self.device)
         self.log_temp.requires_grad = True
-        # set target entropy to -|A|
+        #Set target entropy to -|A|
+        #TODO:Refactor to function if act_dim becomes a problem for differing envs.
         self.target_entropy = -self.act_dim[0]
 
-        # Create actor critic networks and freeze targets.
-        self.ac = core.MLPActorCritic(self.net_obs_dim, self.act_dim, self.act_range, hidden_sizes, log_max=self.log_max, log_min=self.log_min)
+        #Create actor critic networks and freeze targets.
+        #For discrete SAC see the following paper: https://arxiv.org/pdf/1910.07207.pdf
+        self.ac = core.MLPActorCritic(self.net_obs_dim, self.act_dim, hidden_sizes,
+                                      discrete=self.action_discrete, num_dis_actions=self.num_discrete_actions,
+                                      log_max=self.log_max, log_min=self.log_min)
         self.ac.to(self.device)
 
         if self.log:
             obs_test = torch.rand(tuple(self.net_obs_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
             act_test = torch.rand(tuple(self.act_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
             self.piwriter.add_graph(self.ac.pi, obs_test)
-            self.qwriter.add_graph(self.ac.q1, [obs_test, act_test])
+            if self.action_discrete:
+                self.qwriter.add_graph(self.ac.q1, [obs_test])
+            else:
+                self.qwriter.add_graph(self.ac.q1, [[obs_test, act_test]])
 
         #Optim for trained networks actor, critic1, and critic2. Optim for temp dual func.
         self.pi_optimizer = torch.optim.Adam(self.ac.pi.parameters(), lr=lr)
@@ -150,53 +154,68 @@ class SACAgent:
     def compute_loss_q(self, data):
         o, a, r, o_next, done = data['obs'], data['act'], data['rew'], data['o_next'], data['done']
 
-        #TD Present target.
-        expected_q1 = self.ac.q1(o,a)
-        expected_q2 = self.ac.q2(o,a)
-
         #Compute MBSE.
-        #Dont update the targets here!
-        with torch.no_grad():
-            #Get Target TD action from next observation.
-            aNext, logp_aNext = self.ac.pi(o_next, deterministic=False)
+        #Get Target TD action from next observation.
+        a_next, probs_next = self.ac.pi(o_next, deterministic=False)
 
-            #Compute Target Q-values and take the minimum.
-            q1_pi_targ = self.ac.q1targ(o_next, aNext)
-            q2_pi_targ = self.ac.q2targ(o_next, aNext)
-            q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
-            
-            #Reward, Discount, Done, QTarget, Added Entropy.
-            backup = r + self.gamma * (1 - done) * (q_pi_targ_min - self.temp.detach() * logp_aNext)
+        if self.ac.pi.discrete:
+            expected_q1 = self.ac.q1(o).sum(-1)
+            expected_q2 = self.ac.q2(o).sum(-1)
+            #No backprop through these components, targq params receive soft updates.
+            with torch.no_grad():    
+                q1_pi_targ = self.ac.q1targ(o_next)
+                q2_pi_targ = self.ac.q2targ(o_next)
+                q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
+                logp_a_next = probs_next[0]
+                probs_a_next = probs_next[1]
+                target = (probs_a_next * (q_pi_targ_min - self.temp.detach() * logp_a_next)).sum(-1)
+                backup = r + self.gamma * (1 - done) * target
+        else:
+            expected_q1 = self.ac.q1(o,a)
+            expected_q2 = self.ac.q2(o,a)
+            #No backprop through these components, targq params receive soft updates.
+            with torch.no_grad():
+                q1_pi_targ = self.ac.q1targ(o_next, a_next)
+                q2_pi_targ = self.ac.q2targ(o_next, a_next)
+                q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
+                logp_a_next = probs_next[0]
+                target = (q_pi_targ_min - self.temp.detach() * logp_a_next)
+                backup = r + self.gamma * (1 - done) * target
 
         #MSE loss against Bellman backup, take average of Q net loss and return.
         loss_q1 = ((expected_q1 - backup)**2).mean()
         loss_q2 = ((expected_q2 - backup)**2).mean()
         loss_q = loss_q1 + loss_q2
-
-        #How can I use tensorboarad here?
-        #q_info = dict(Q1Vals=q1.detach().numpy(),Q2Vals=q2.detach().numpy())
-        #logger.store(LossQ=loss_q.item(), **q_info)
-
+        
         return loss_q
 
     #Function to return pi loss.
     #See Section 4.2 Equations 7, 8, and 9 of https://arxiv.org/pdf/1812.05905v2.pdf
     def compute_loss_pi(self, data):
         o = data['obs']
-        pi, logprob_pi = self.ac.pi(o, deterministic=False)
-        q1_pi = self.ac.q1(o, pi)
-        q2_pi = self.ac.q2(o, pi)
-        q_pi = torch.min(q1_pi, q2_pi)
-
-        # Max V(st) = (Q(st, at) - temp * log(pi(at)))
-        # by min (temp * log((pi(atR))) - Q(st, atR)
-        # where atR is pi's reparametrized  output.
-        # Pi outputs a mu and std actions are reparametrized  by
-        # noise from a normal distribution then scaled and shifted
-        # by pi's output, the reparameterization trick.
-        loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
+        pi_act, probs = self.ac.pi(o, deterministic=False)
         
-        return loss_pi, logprob_pi
+        if self.ac.pi.discrete:
+            q1_pi = self.ac.q1(o)
+            q2_pi = self.ac.q2(o)
+            q_pi = torch.min(q1_pi, q2_pi)
+            logprob_pi = probs[0]
+            pi_probs = probs[1]
+            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi)).sum(dim=1).mean()
+        else:
+            # Max V(st) = (Q(st, at) - temp * log(pi(at)))
+            # by min (temp * log((pi(atR))) - Q(st, atR)
+            # where atR is pi's reparametrized  output.
+            # Pi outputs a mu and std, actions are selected  by
+            # sampling a value from a standard normal distribution.
+            # This value is then scaled and shifted by pi's output, the reparameterization trick.
+            q1_pi = self.ac.q1(o, pi_act)
+            q2_pi = self.ac.q2(o, pi_act)
+            q_pi = torch.min(q1_pi, q2_pi)
+            logprob_pi = probs[0]
+            loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
+        
+        return loss_pi, probs
     
     def configure_buffer(self):
         if self.use_HER:
@@ -224,7 +243,7 @@ class SACAgent:
         #Optimize the policy.
         self.pi_optimizer.zero_grad()
         #Compute pi/actor loss.
-        loss_pi, logprob_pi = self.compute_loss_pi(data)
+        loss_pi, probs = self.compute_loss_pi(data)
         #Get partials.
         loss_pi.backward()
         #Take GD step for actor net pi.
@@ -232,7 +251,14 @@ class SACAgent:
 
         #Adjust the temp parameter. Detach logprob_pi and target_entropy from optim.
         #See section 5 equation 17 of https://arxiv.org/pdf/1812.05905v2.pdf
-        temp_loss = (self.temp * (-logprob_pi - self.target_entropy).detach()).mean()
+        if self.action_discrete:
+            logprob_pi = probs[0]
+            pi_probs = probs[1]
+            temp_loss = (pi_probs.detach() * (self.temp * (-logprob_pi - self.target_entropy).detach())).sum(dim=-1).mean()
+        else:
+            logprob_pi = probs[0]
+            temp_loss = (self.temp * (-logprob_pi - self.target_entropy).detach()).mean()
+        
         self.log_temp_optimizer.zero_grad()
         temp_loss.backward()
         self.log_temp_optimizer.step()
@@ -250,9 +276,13 @@ class SACAgent:
 
         return loss_q.detach(), loss_pi.detach(), temp_loss.detach()
                 
-    def get_action(self, o, deterministic=False, scale_action=False):
+    def get_action(self, o, deterministic=False):
         shaped = torch.as_tensor(o.reshape(1, *self.net_obs_dim), dtype=torch.float32, device=self.device)
-        action = self.ac.act(shaped, deterministic, scale_action).reshape(*self.act_dim)
+        action = self.ac.act(shaped, deterministic)
+        if self.action_discrete:
+            action = int(action)
+        else:
+            action = action.reshape(*self.act_dim)
         return action
 
     def test_agent(self):
@@ -327,8 +357,8 @@ class SACAgent:
                 if self.obs_not_dict:
                     res  = self.replay_buffer.HER_obs_pr(obs_Next)
                     dg, ag = res[0], res[1]
-            else:
-                dg, ag = obs_Next['desired_goal'], obs_Next['achieved_goal']
+                else:
+                    dg, ag = obs_Next['desired_goal'], obs_Next['achieved_goal']
 
             #Update episode return and length.                
             ep_len += 1
@@ -383,12 +413,17 @@ class SACAgent:
                     self.writer.add_scalar('Total Temp loss', ep_temp_loss, global_step=epoch)
                     #Learned Values
                     self.writer.add_scalar('Temp/Alpha', self.temp.detach().item(), global_step=epoch)
-                    self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=1), global_step=epoch)
-                    self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=1), global_step=epoch)
-                    #Sample Distribution
-                    histo_vals = util.sample_normal(self.ac.pi.mu, self.ac.pi.std)
+                    #Histograms
+                    if self.action_discrete:
+                        test_o = torch.as_tensor(o.reshape(1, *self.net_obs_dim), dtype=torch.float32, device=self.device)
+                        _, probs = self.ac.pi(test_o, deterministic=False)
+                        histo_vals = util.sample_categorical(probs[1])
+                    else:
+                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(dim=1), global_step=epoch)
+                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(dim=1), global_step=epoch)
+                        histo_vals = util.sample_normal(self.ac.pi.mu, self.ac.pi.std)
+                    
                     self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)
-
                     if not self._tboard_started:
                         running, board_url = util.start_tensorboard(self.log_data_dir)
                         self._tboard_started = running

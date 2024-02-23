@@ -42,6 +42,39 @@ def freeze_thaw_parameters(module, freeze=True):
 def get_device():
     return 'cuda' if torch.cuda.is_available() else 'cpu'
 
+def get_environment_shape(agent):
+    env = agent.env
+    device = get_device()
+    obs_dim = 0
+    act_dim = 0
+    agent.action_discrete = False
+    agent.num_discrete_actions = 0
+
+    if isinstance(env.observation_space, gym.spaces.dict.Dict):
+        obs_dim = np.array(env.observation_space['observation'].shape)
+    elif isinstance(env.observation_space, gym.spaces.box.Box):
+        obs_dim = np.array(env.observation_space.shape)
+    elif isinstance(env.observation_space, gym.spaces.discrete.Discrete):
+        obs_dim = np.array(1).reshape(1,)
+    else:
+        obs_dim = np.array(env.observation_space.shape)
+
+    if isinstance(env.action_space, gym.spaces.dict.Dict):
+        #Not sure this will ever be a thing, would be something like:
+        #space = env.action_space['action']
+        #act_dim = np.array(space.shape)
+        raise NotImplementedError
+    elif isinstance(env.action_space, gym.spaces.box.Box):
+        act_dim =  np.array(env.action_space.shape)
+    elif isinstance(env.action_space, gym.spaces.discrete.Discrete):
+        act_dim =  np.array(1).reshape(1,)
+        agent.action_discrete = True
+        agent.num_discrete_actions = env.action_space.n
+    else:
+        act_dim =  np.array(env.action_space.shape)
+    
+    return obs_dim, act_dim
+
 def get_latest_frames(directory, file_extension):
     vid_path =  max((os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(file_extension)), 
                     key=os.path.getmtime, default=None)
@@ -79,8 +112,16 @@ def mlp(sizes, activation, output_activation=nn.Identity):
         nn.init.kaiming_uniform_(ll.weight, nonlinearity='relu')
         layers.append(ll)
         act = activation if j < len(sizes)-2 else output_activation
-        layers.append(act())
+        if act is not None:
+            layers.append(act())
     return nn.Sequential(*layers)
+
+def sample_categorical(probs, n=100):
+    dist = torch.distributions.categorical.Categorical(probs)
+    probs_shape = [sv for i, sv in enumerate(probs.shape) if i > 0]
+    sample_shape = combined_shape(n, probs_shape)
+    vals = dist.sample(sample_shape)
+    return vals
 
 def sample_normal(mu, sigma, n=100):
     dist = torch.distributions.normal.Normal(mu, sigma)
