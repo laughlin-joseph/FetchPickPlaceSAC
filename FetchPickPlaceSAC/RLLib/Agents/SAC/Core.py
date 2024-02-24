@@ -124,7 +124,10 @@ class HERReplayBuffer(SACReplayBuffer):
 class SquashedGaussianMLPActor(nn.Module):
     @property
     def mu(self):
-        return self._mu
+        if self._mu is None:
+            return 0
+        else:
+            return self._mu
 
     @mu.setter
     def mu(self, value):
@@ -132,7 +135,10 @@ class SquashedGaussianMLPActor(nn.Module):
     
     @property
     def std(self):
-        return self._std
+        if self._std is None:
+            return 0
+        else:
+            return self._std
 
     @std.setter
     def std(self, value):
@@ -198,7 +204,7 @@ class SquashedGaussianMLPActor(nn.Module):
                 #Using an equation that is more numerically stable:
                 #https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
                 logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
-                logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=1)
+                logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=-1)
             else:
                 logprob_pi = None
             
@@ -219,17 +225,17 @@ class MLPQFunction(nn.Module):
             #Cat obs and act dims for input layer, add hidden layers, add output Q.
             self.q = util.mlp(list(obs_dim + act_dim) + list(hidden_sizes) + list([1]), activation)
 
-    def forward(self, input):
+    def forward(self, input = list):
         obs = input[0]
         if self.discrete:
             q = self.q(obs)
         else:
+            #Output a 
             act = input[1]
             q = self.q(torch.cat([obs, act], axis=-1))
+            q = q.squeeze(-1)
         
-        
-        #Reshape val returned from Q network MLP.
-        return torch.squeeze(q, -1)
+        return q
 
 class MLPActorCritic(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_sizes=[256,256], discrete=False, num_dis_actions=0, activation=nn.ReLU, log_max=2, log_min=-20):

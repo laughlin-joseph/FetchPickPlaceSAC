@@ -93,9 +93,11 @@ class SACAgent:
         #Temp tuning setup
         self.log_temp = torch.tensor(np.log(self.temp_init)).to(self.device)
         self.log_temp.requires_grad = True
-        #Set target entropy to -|A|
-        #TODO:Refactor to function if act_dim becomes a problem for differing envs.
-        self.target_entropy = -self.act_dim[0]
+        #See https://arxiv.org/pdf/2209.10081.pdf Notes following equation 10 in section 3.
+        if self.action_discrete:
+            self.target_entropy = -np.log((1.0 / self.num_discrete_actions)) * 0.98
+        else:
+            self.target_entropy = -self.act_dim[0]
 
         #Create actor critic networks and freeze targets.
         #For discrete SAC see the following paper: https://arxiv.org/pdf/1910.07207.pdf
@@ -109,7 +111,7 @@ class SACAgent:
             act_test = torch.rand(tuple(self.act_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
             self.piwriter.add_graph(self.ac.pi, obs_test)
             if self.action_discrete:
-                self.qwriter.add_graph(self.ac.q1, [obs_test])
+                self.qwriter.add_graph(self.ac.q1, [[obs_test]])
             else:
                 self.qwriter.add_graph(self.ac.q1, [[obs_test, act_test]])
 
@@ -154,32 +156,33 @@ class SACAgent:
     def compute_loss_q(self, data):
         o, a, r, o_next, done = data['obs'], data['act'], data['rew'], data['o_next'], data['done']
 
-        #Compute MBSE.
-        #Get Target TD action from next observation.
         a_next, probs_next = self.ac.pi(o_next, deterministic=False)
 
+        #Compute MBSE.
         if self.ac.pi.discrete:
-            expected_q1 = self.ac.q1(o).sum(-1)
-            expected_q2 = self.ac.q2(o).sum(-1)
+            expected_q1 = self.ac.q1([o]).sum(-1)
+            expected_q2 = self.ac.q2([o]).sum(-1)
             #No backprop through these components, targq params receive soft updates.
             with torch.no_grad():    
-                q1_pi_targ = self.ac.q1targ((o_next))
-                q2_pi_targ = self.ac.q2targ((o_next))
+                q1_pi_targ = self.ac.q1targ([o_next])
+                q2_pi_targ = self.ac.q2targ([o_next])
                 q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
                 logp_a_next = probs_next[0]
                 probs_a_next = probs_next[1]
                 target = (probs_a_next * (q_pi_targ_min - self.temp.detach() * logp_a_next)).sum(-1)
                 backup = r + self.gamma * (1 - done) * target
+                #backup = r + self.gamma * (1 - done) * q_pi_targ_min
         else:
-            expected_q1 = self.ac.q1((o,a))
-            expected_q2 = self.ac.q2((o,a))
+            expected_q1 = self.ac.q1([o,a])
+            expected_q2 = self.ac.q2([o,a])
             #No backprop through these components, targq params receive soft updates.
             with torch.no_grad():
-                q1_pi_targ = self.ac.q1targ((o_next, a_next))
-                q2_pi_targ = self.ac.q2targ((o_next, a_next))
+                #Get Target TD action from next observation.
+                q1_pi_targ = self.ac.q1targ([o_next, a_next])
+                q2_pi_targ = self.ac.q2targ([o_next, a_next])
                 q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
-                logp_a_next = probs_next[0]
-                target = (q_pi_targ_min - self.temp.detach() * logp_a_next)
+                logpi_a_next = probs_next[0]
+                target = (q_pi_targ_min - self.temp * logpi_a_next)
                 backup = r + self.gamma * (1 - done) * target
 
         #MSE loss against Bellman backup, take average of Q net loss and return.
@@ -196,12 +199,12 @@ class SACAgent:
         pi_act, probs = self.ac.pi(o, deterministic=False)
         
         if self.ac.pi.discrete:
-            q1_pi = self.ac.q1(o)
-            q2_pi = self.ac.q2(o)
+            q1_pi = self.ac.q1([o])
+            q2_pi = self.ac.q2([o])
             q_pi = torch.min(q1_pi, q2_pi)
             logprob_pi = probs[0]
             pi_probs = probs[1]
-            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi)).sum(axis=1).mean()
+            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi)).sum(axis=-1).mean()
         else:
             # Max V(st) = (Q(st, at) - temp * log(pi(at)))
             # by min (temp * log((pi(atR))) - Q(st, atR)
@@ -209,8 +212,8 @@ class SACAgent:
             # Pi outputs a mu and std, actions are selected  by
             # sampling a value from a standard normal distribution.
             # This value is then scaled and shifted by pi's output, the reparameterization trick.
-            q1_pi = self.ac.q1((o, pi_act))
-            q2_pi = self.ac.q2((o, pi_act))
+            q1_pi = self.ac.q1([o, pi_act])
+            q2_pi = self.ac.q2([o, pi_act])
             q_pi = torch.min(q1_pi, q2_pi)
             logprob_pi = probs[0]
             loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
@@ -254,10 +257,12 @@ class SACAgent:
         if self.action_discrete:
             logprob_pi = probs[0]
             pi_probs = probs[1]
-            temp_loss = (pi_probs.detach() * (self.temp * (-logprob_pi - self.target_entropy).detach())).sum(axis=-1).mean()
+            inner =  (-logprob_pi - self.target_entropy).detach()
+            temp_loss = (pi_probs.detach() * (self.temp * inner)).sum(axis=-1).mean()
         else:
             logprob_pi = probs[0]
-            temp_loss = (self.temp * (-logprob_pi - self.target_entropy).detach()).mean()
+            inner = (-logprob_pi - self.target_entropy).detach()
+            temp_loss = (self.temp * inner).mean()
         
         self.log_temp_optimizer.zero_grad()
         temp_loss.backward()
