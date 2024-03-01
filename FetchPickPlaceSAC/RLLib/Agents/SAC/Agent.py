@@ -284,7 +284,7 @@ class SACAgent:
             logprob_pi = probs[0]
             pi_probs = probs[1]
             inner =  (-logprob_pi - self.target_entropy).detach()
-            temp_loss = (pi_probs.detach() * (self.temp * inner)).sum(axis=-1).mean()
+            temp_loss = (pi_probs.detach() * (self.temp * inner)).mean()
         else:
             logprob_pi = probs[0]
             inner = (-logprob_pi - self.target_entropy).detach()

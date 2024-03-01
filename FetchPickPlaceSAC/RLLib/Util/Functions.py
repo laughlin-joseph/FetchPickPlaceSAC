@@ -156,16 +156,13 @@ def setup_test_env(agent, rec_folder):
        set_dirs(agent)
     
     rec_folder = os.path.join(agent.root_dir, rec_folder)
-    max_len = agent.max_ep_len if agent.max_ep_len else 0
     
     agent.test_env = gym.make(agent.env_name, render_mode='rgb_array', max_episode_steps=agent.max_ep_len)
     
     agent.test_env = gym.wrappers.RecordVideo(env=agent.test_env, video_folder=rec_folder, 
-                                    episode_trigger=lambda a : True, video_length=max_len, 
-                                    name_prefix=agent.test_count)
+                                              episode_trigger=lambda a : True, name_prefix=agent.test_count)
     
-    max_len = max_len if max_len > 0 else 100
-    agent.test_env = gym.wrappers.RecordEpisodeStatistics(agent.test_env, deque_size=max_len)
+    agent.test_env = gym.wrappers.RecordEpisodeStatistics(agent.test_env)
 
 def start_tensorboard(logdir):
     running, board_add = False, ''
