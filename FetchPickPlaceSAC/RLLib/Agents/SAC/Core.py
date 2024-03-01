@@ -144,6 +144,17 @@ class SquashedGaussianMLPActor(nn.Module):
     def std(self, value):
         self._std = value
 
+    @property
+    def entropy(self):
+        if self._entropy is None:
+            return 0
+        else:
+            return self._entropy
+
+    @entropy.setter
+    def entropy(self, value):
+        self._entropy = value
+
     def __init__(self, obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation, log_max, log_min):
         super().__init__()
         self.discrete = discrete
@@ -151,6 +162,7 @@ class SquashedGaussianMLPActor(nn.Module):
         self.log_min = log_min
         self.mu = 0
         self.std = 0
+        self.entropy = 0
         self.num_dis_actions = num_dis_actions
 
         if discrete:
@@ -178,6 +190,7 @@ class SquashedGaussianMLPActor(nn.Module):
             pi_probs = pi_probs + eps
             logprob_pi = torch.log(pi_probs)
             probs = (logprob_pi, pi_probs)
+            self.entropy = pi_probs * logprob_pi
         
         #For continuous action spaces.
         else:
@@ -205,6 +218,7 @@ class SquashedGaussianMLPActor(nn.Module):
                 #https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
                 logprob_pi = pi_distribution.log_prob(pi_action).sum(axis=-1)
                 logprob_pi -= (2*(np.log(2) - pi_action - F.softplus(-2*pi_action))).sum(axis=-1)
+                self.entropy = logprob_pi
             else:
                 logprob_pi = None
             

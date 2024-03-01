@@ -9,7 +9,7 @@ import RLLib.Util.Functions as util
 class SACAgent:
     def __init__(self, env, hidden_sizes=[512,512], seed=1,
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
-                 gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, log_max=2, log_min=-10,
+                 gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, ent_pen_scale=0.5, q_clip=0.5, log_max=2, log_min=-10,
                  batch_size=1024, replay_buffer_size=int(1e6),
                  use_HER=True, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=core.GoalUpdateStrategy.FUTURE, HER_k=1,
                  start_exploration_steps=5000, update_after_steps=10000, update_every_steps=100,
@@ -51,6 +51,8 @@ class SACAgent:
         self.polyak = polyak
         self.lr = lr
         self.temp_init = temp_init
+        self.q_clip = q_clip
+        self.ent_pen_scale = ent_pen_scale
         self.log_max = log_max
         self.log_min = log_min
 
@@ -160,18 +162,36 @@ class SACAgent:
 
         #Compute MBSE.
         if self.ac.pi.discrete:
-            expected_q1 = self.ac.q1([o]).sum(-1)
-            expected_q2 = self.ac.q2([o]).sum(-1)
+            expected_q1 = self.ac.q1([o])
+            expected_q2 = self.ac.q2([o])
             #No backprop through these components, targq params receive soft updates.
             with torch.no_grad():    
+                #For info regarding double average Q nets with 
+                #clipping see section 5.2 of the following: https://arxiv.org/pdf/2209.10081.pdf
                 q1_pi_targ = self.ac.q1targ([o_next])
                 q2_pi_targ = self.ac.q2targ([o_next])
-                q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
+                #We get exact entropy and probability of actions due to discrete action space.
                 logp_a_next = probs_next[0]
                 probs_a_next = probs_next[1]
-                target = (probs_a_next * (q_pi_targ_min - self.temp.detach() * logp_a_next)).sum(-1)
-                backup = r + self.gamma * (1 - done) * target
-                #backup = r + self.gamma * (1 - done) * q_pi_targ_min
+                #Use average Q instead of min in order to avoid Q value undereestimation.
+                q_pi_targ_avg = torch.mean(torch.stack([q1_pi_targ, q2_pi_targ], axis=-1), axis=-1)
+                #Calculate value for target using average Q.
+                target_val = (probs_a_next * (q_pi_targ_avg - self.temp.detach() * logp_a_next)).sum(axis=-1)
+                backup = r + self.gamma * (1 - done) * target_val
+            #Add clipped difference in order to avoid underavalue Q, take max later if targ > expected.
+            clipped_q1 = (q1_pi_targ + torch.clamp(expected_q1 - q1_pi_targ, -self.q_clip, self.q_clip)).sum(axis=-1)
+            clipped_q2 = (q2_pi_targ + torch.clamp(expected_q2 - q2_pi_targ, -self.q_clip, self.q_clip)).sum(axis=-1)
+            #Sum expected Q.                
+            expected_q1 = expected_q1.sum(axis=-1)
+            expected_q2 = expected_q2.sum(axis=-1)
+            #Take loss from larger Q1 val.
+            loss_q1_ex = ((expected_q1 - backup)**2).mean()
+            loss_q1_clip = ((clipped_q1 - backup)**2).mean()
+            loss_q1 = torch.max(loss_q1_ex, loss_q1_clip)
+            #Take loss from larger Q2 val.
+            loss_q2_ex = ((expected_q2 - backup)**2).mean()
+            loss_q2_clip = ((clipped_q2 - backup)**2).mean()                
+            loss_q2 = torch.max(loss_q2_ex, loss_q2_clip)
         else:
             expected_q1 = self.ac.q1([o,a])
             expected_q2 = self.ac.q2([o,a])
@@ -182,30 +202,36 @@ class SACAgent:
                 q2_pi_targ = self.ac.q2targ([o_next, a_next])
                 q_pi_targ_min = torch.min(q1_pi_targ, q2_pi_targ)
                 logpi_a_next = probs_next[0]
-                target = (q_pi_targ_min - self.temp * logpi_a_next)
-                backup = r + self.gamma * (1 - done) * target
+                target_val = (q_pi_targ_min - self.temp * logpi_a_next)
+                backup = r + self.gamma * (1 - done) * target_val
+            loss_q1 = ((expected_q1 - backup)**2).mean()
+            loss_q2 = ((expected_q2 - backup)**2).mean()
 
-        #MSE loss against Bellman backup, take average of Q net loss and return.
-        loss_q1 = ((expected_q1 - backup)**2).mean()
-        loss_q2 = ((expected_q2 - backup)**2).mean()
+        #Sum average loss and return.
         loss_q = loss_q1 + loss_q2
-        
         return loss_q
 
     #Function to return pi loss.
-    #See Section 4.2 Equations 7, 8, and 9 of https://arxiv.org/pdf/1812.05905v2.pdf
     def compute_loss_pi(self, data):
+        old_ent = self.ac.pi.entropy
         o = data['obs']
         pi_act, probs = self.ac.pi(o, deterministic=False)
-        
+        current_ent = self.ac.pi.entropy
         if self.ac.pi.discrete:
             q1_pi = self.ac.q1([o])
             q2_pi = self.ac.q2([o])
-            q_pi = torch.min(q1_pi, q2_pi)
             logprob_pi = probs[0]
             pi_probs = probs[1]
-            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi)).sum(axis=-1).mean()
+            #For information on discrete SAC with entropy
+            #penalty see section 5.1 equation 14: https://arxiv.org/pdf/2209.10081.pdf
+            q_pi_avg = torch.mean(torch.stack([q1_pi, q2_pi], axis=-1), axis=-1)
+            ent_pen = ((current_ent - old_ent)**2).mean()
+            scaled_ent_pen = self.ent_pen_scale * ent_pen
+            #Calculate actor loss and add entropy penalty.
+            loss_pi = (pi_probs * (self.temp.detach() * logprob_pi - q_pi_avg)).sum(axis=-1).mean()
+            loss_pi += scaled_ent_pen
         else:
+            #See Section 4.2 Equations 7, 8, and 9 of https://arxiv.org/pdf/1812.05905v2.pdf
             # Max V(st) = (Q(st, at) - temp * log(pi(at)))
             # by min (temp * log((pi(atR))) - Q(st, atR)
             # where atR is pi's reparametrized  output.
