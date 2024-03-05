@@ -24,6 +24,7 @@
     <Compile Include="RLLib\Agents\SAC\Agent.py" />
     <Compile Include="RLLib\Agents\SAC\Core.py" />
     <Compile Include="RLLib\Agents\__init__.py" />
+    <Compile Include="RLLib\Util\Data.py" />
     <Compile Include="RLLib\Util\Functions.py" />
     <Compile Include="RLLib\Util\__init__.py" />
     <Compile Include="RLLib\__init__.py" />

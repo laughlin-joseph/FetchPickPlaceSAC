@@ -4,14 +4,16 @@ import datetime
 import torch
 import gymnasium.spaces as spaces
 import RLLib.Agents.SAC.Core as core
-import RLLib.Util.Functions as util
+import RLLib.Util.Functions as funcs
+import RLLib.Util.Data as data
 
 class SACAgent:
     def __init__(self, env, hidden_sizes=[512,512], seed=1,
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
                  gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, ent_pen_scale=0.5, q_clip=0.5, log_max=2, log_min=-10,
                  batch_size=1024, replay_buffer_size=int(1e6),
-                 use_HER=True, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=core.GoalUpdateStrategy.FUTURE, HER_k=1,
+                 use_HER=False, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=core.GoalUpdateStrategy.FUTURE, HER_k=1,
+                 use_PER=False, PER_Alpha=.6, PER_Beta=.4, PER_Epsilon=1e-6,
                  start_exploration_steps=5000, update_after_steps=10000, update_every_steps=100,
                  run_tests_and_record=False, enable_logging=False, test_every_epochs=10, done_at_goal=False):
         
@@ -19,7 +21,7 @@ class SACAgent:
             self.log = enable_logging
             self._tboard_started = False
             #Add the summary writer to self.
-            util.create_summary_writer(self)
+            funcs.create_summary_writer(self)
             #Collect and clean input args.
             params = copy.copy(locals())
             env_name = env.spec.id
@@ -30,22 +32,32 @@ class SACAgent:
             self.writer.add_text('Agent Parameters:',str(params))
 
         #Check for CUDA.
-        self.device = util.get_device()
+        self.device = funcs.get_device()
 
         #Envs.
         self.env = env
         self.env_name = self.env.spec.id
-        util.set_dirs(self)
+        funcs.set_dirs(self)
         
-        #Set HER usage and buffer props.
+        #Set HER usage.
         self.use_HER = use_HER
         self.HER_obs_pr = HER_obs_pr
         self.HER_rew_func = HER_rew_func
         self.HER_strat = HER_strat
         self.HER_k = HER_k
+
+        #Set PER usage.
+        self.use_PER = use_PER
+        self.PER_Alpha = PER_Alpha
+        self.PER_Beta = PER_Beta
+        self.PER_Epsilon = PER_Epsilon
+        
+        #Set Gen Buffer props.
         self.replay_buffer_size = replay_buffer_size
         self.batch_size = batch_size
-        
+        if (self.use_HER and self.use_PER):
+            raise ValueError('Cannot use HER and PER at the same time.')
+
         #Set params and constants.
         self.gamma = gamma
         self.polyak = polyak
@@ -59,7 +71,7 @@ class SACAgent:
         #Configure obs, act, and goal dims if required for HER.
         #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.        
         self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict)
-        self.obs_dim, self.act_dim = util.get_environment_shape(self)
+        self.obs_dim, self.act_dim = funcs.get_environment_shape(self)
 
         if self.use_HER:
             if self.obs_not_dict:
@@ -90,7 +102,7 @@ class SACAgent:
         self.update_every_steps = update_every_steps
 
         #Set all seeds.
-        util.set_seed(seed)
+        funcs.set_seed(seed)
 
         #Temp tuning setup
         self.log_temp = torch.tensor(np.log(self.temp_init)).to(self.device)
@@ -132,7 +144,7 @@ class SACAgent:
         self.done_at_goal = done_at_goal
         self.test_count = 0
         if self.run_tests_and_record:
-            util.setup_test_env(self, 'TestRecordings')
+            funcs.setup_test_env(self, 'TestRecordings')
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -207,6 +219,12 @@ class SACAgent:
             loss_q1 = ((expected_q1 - backup)**2).mean()
             loss_q2 = ((expected_q2 - backup)**2).mean()
 
+        #TODO: Weight adjusted values here and above.
+        if self.use_PER:
+            new_priorities = np.abs((loss_q1+loss_q2).mean()) + self.PER_Epsilon
+            self.replay_buffer.update_priorities(data['indexes'], new_priorities)
+        else:
+
         #Sum average loss and return.
         loss_q = loss_q1 + loss_q2
         return loss_q
@@ -248,10 +266,16 @@ class SACAgent:
     
     def configure_buffer(self):
         if self.use_HER:
-            self.replay_buffer = core.HERReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size,device=self.device,
-                                                      strat=self.HER_strat, HER_obs_pr=self.HER_obs_pr, HER_rew_func=self.HER_rew_func, k=self.HER_k)
+            self.replay_buffer = data.HindsightExperienceReplayBuffer(
+                obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size, device=self.device,
+                strat=self.HER_strat, HER_obs_pr=self.HER_obs_pr, HER_rew_func=self.HER_rew_func, k=self.HER_k)
+            
+        elif self.use_PER:
+            self.replay_buffer = data.PrioritizedReplayBuffer(
+                obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device,
+                alpha=self.PER_Alpha)
         else:
-            self.replay_buffer = core.SACReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
+            self.replay_buffer = data.ReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
 
     def update(self, data):
         #GD for Q1 and Q2.
@@ -267,7 +291,7 @@ class SACAgent:
         
         #Freeze the Q networks, we already optimized them.
         for q in (self.ac.q1, self.ac.q2):
-            util.freeze_thaw_parameters(q)
+            funcs.freeze_thaw_parameters(q)
 
         #Optimize the policy.
         self.pi_optimizer.zero_grad()
@@ -296,7 +320,7 @@ class SACAgent:
 
         #Unfreeze the Q Networks.
         for q in (self.ac.q1, self.ac.q2):
-            util.freeze_thaw_parameters(q, freeze=False)
+            funcs.freeze_thaw_parameters(q, freeze=False)
         
         #For the soft part of SAC, Polyak average the Target Q networks.        
         with torch.no_grad():
@@ -427,13 +451,13 @@ class SACAgent:
             if (t+1) % self.steps_per_epoch == 0:
                 #Save model
                 if (epoch % self.save_freq_epoch == 0) or (epoch == self.epochs):
-                    util.save(self, self.env_name)
+                    funcs.save(self, self.env_name)
                 
                 #Test the performance of the deterministic actor.
                 if (epoch % self.test_every_epochs == 0) and  self.run_tests_and_record:
                     test_rew, test_info = self.test_agent()
                     video_dir = self.test_env.spec.additional_wrappers[0].kwargs['video_folder']
-                    frames, rate = util.get_latest_frames(video_dir, 'mp4')
+                    frames, rate = funcs.get_latest_frames(video_dir, 'mp4')
                     self.writer.add_video('Recording of latest test:', frames, global_step=epoch, fps=rate)
 
 
@@ -448,15 +472,15 @@ class SACAgent:
                     if self.action_discrete:
                         test_o = torch.as_tensor(o.reshape(1, *self.net_obs_dim), dtype=torch.float32, device=self.device)
                         _, probs = self.ac.pi(test_o, deterministic=False)
-                        histo_vals = util.sample_categorical(probs[1])
+                        histo_vals = funcs.sample_categorical(probs[1])
                     else:
                         self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=1), global_step=epoch)
                         self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=1), global_step=epoch)
-                        histo_vals = util.sample_normal(self.ac.pi.mu, self.ac.pi.std)
+                        histo_vals = funcs.sample_normal(self.ac.pi.mu, self.ac.pi.std)
                     
                     self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)
                     if not self._tboard_started:
-                        running, board_url = util.start_tensorboard(self.log_data_dir)
+                        running, board_url = funcs.start_tensorboard(self.log_data_dir)
                         self._tboard_started = running
                         self.tensor_board_url = board_url
                     #Write all to Tensorboard.
