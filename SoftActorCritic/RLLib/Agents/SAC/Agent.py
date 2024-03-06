@@ -12,9 +12,9 @@ class SACAgent:
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
                  gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, ent_pen_scale=0.5, q_clip=0.5, log_max=2, log_min=-10,
                  batch_size=1024, replay_buffer_size=int(1e6),
-                 use_HER=False, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=core.GoalUpdateStrategy.FUTURE, HER_k=1,
+                 use_HER=False, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=data.GoalUpdateStrategy.FUTURE, HER_k=1,
                  use_PER=False, PER_Alpha=.6, PER_Beta=.4, PER_Epsilon=1e-6,
-                 start_exploration_steps=5000, update_after_steps=10000, update_every_steps=100,
+                 start_exploration_steps=25000, update_after_steps=10000, update_every_steps=100,
                  run_tests_and_record=False, enable_logging=False, test_every_epochs=10, done_at_goal=False):
         
         if enable_logging:
@@ -193,16 +193,13 @@ class SACAgent:
             #Add clipped difference in order to avoid underavalue Q, take max later if targ > expected.
             clipped_q1 = (q1_pi_targ + torch.clamp(expected_q1 - q1_pi_targ, -self.q_clip, self.q_clip)).sum(axis=-1)
             clipped_q2 = (q2_pi_targ + torch.clamp(expected_q2 - q2_pi_targ, -self.q_clip, self.q_clip)).sum(axis=-1)
-            #Sum expected Q.                
-            expected_q1 = expected_q1.sum(axis=-1)
-            expected_q2 = expected_q2.sum(axis=-1)
             #Take loss from larger Q1 val.
-            loss_q1_ex = ((expected_q1 - backup)**2).mean()
-            loss_q1_clip = ((clipped_q1 - backup)**2).mean()
+            loss_q1_ex = ((expected_q1.sum(axis=-1) - backup)**2)
+            loss_q1_clip = ((clipped_q1 - backup)**2)
             loss_q1 = torch.max(loss_q1_ex, loss_q1_clip)
             #Take loss from larger Q2 val.
-            loss_q2_ex = ((expected_q2 - backup)**2).mean()
-            loss_q2_clip = ((clipped_q2 - backup)**2).mean()                
+            loss_q2_ex = ((expected_q2.sum(axis=-1) - backup)**2)
+            loss_q2_clip = ((clipped_q2 - backup)**2)
             loss_q2 = torch.max(loss_q2_ex, loss_q2_clip)
         else:
             expected_q1 = self.ac.q1([o,a])
@@ -216,14 +213,24 @@ class SACAgent:
                 logpi_a_next = probs_next[0]
                 target_val = (q_pi_targ_min - self.temp * logpi_a_next)
                 backup = r + self.gamma * (1 - done) * target_val
-            loss_q1 = ((expected_q1 - backup)**2).mean()
-            loss_q2 = ((expected_q2 - backup)**2).mean()
+            loss_q1 = ((expected_q1 - backup)**2)
+            loss_q2 = ((expected_q2 - backup)**2)
 
-        #TODO: Weight adjusted values here and above.
         if self.use_PER:
-            new_priorities = np.abs((loss_q1+loss_q2).mean()) + self.PER_Epsilon
-            self.replay_buffer.update_priorities(data['indexes'], new_priorities)
+            #Update the priorities here since we have access to Q and Qtarget values for this batch.
+            min_q =  torch.min(expected_q1, expected_q2).sum(axis=-1) if self.ac.pi.discrete else torch.min(expected_q1, expected_q2)
+            min_targ = torch.min(q1_pi_targ, q2_pi_targ).sum(axis=-1) if self.ac.pi.discrete else torch.min(q1_pi_targ, q2_pi_targ)
+            targets = r + self.gamma * (1 - done) * min_targ
+            new_priorities = np.array(torch.abs((targets - min_q).detach().cpu()), dtype=np.int32) + self.PER_Epsilon
+            indexes = np.array(data['indexes'].cpu(), dtype=np.int32)
+            self.replay_buffer.update_priorities(indexes, new_priorities)
+            
+            #Adjust loss for prioritized sampling bias.
+            loss_q1 = (loss_q1 * data['weights']).mean()
+            loss_q2 = (loss_q2 * data['weights']).mean()
         else:
+            loss_q1 = loss_q1.mean()
+            loss_q2 = loss_q2.mean()
 
         #Sum average loss and return.
         loss_q = loss_q1 + loss_q2
@@ -261,7 +268,7 @@ class SACAgent:
             q_pi = torch.min(q1_pi, q2_pi)
             logprob_pi = probs[0]
             loss_pi = (self.temp.detach() * logprob_pi - q_pi).mean()
-        
+
         return loss_pi, probs
     
     def configure_buffer(self):
@@ -273,7 +280,8 @@ class SACAgent:
         elif self.use_PER:
             self.replay_buffer = data.PrioritizedReplayBuffer(
                 obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device,
-                alpha=self.PER_Alpha)
+                alpha=self.PER_Alpha, beta=self.PER_Beta, total_steps=(self.epochs * self.steps_per_epoch))
+        
         else:
             self.replay_buffer = data.ReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
 
@@ -474,8 +482,8 @@ class SACAgent:
                         _, probs = self.ac.pi(test_o, deterministic=False)
                         histo_vals = funcs.sample_categorical(probs[1])
                     else:
-                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=1), global_step=epoch)
-                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=1), global_step=epoch)
+                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.squeeze(-1).mean(axis=-1), global_step=epoch)
+                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.squeeze(-1).mean(axis=-1), global_step=epoch)
                         histo_vals = funcs.sample_normal(self.ac.pi.mu, self.ac.pi.std)
                     
                     self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)

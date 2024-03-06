@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
-import RLLib.Util.Functions as util
+import RLLib.Util.Functions as funcs
 
 class SquashedGaussianMLPActor(nn.Module):
     @property
@@ -51,10 +51,10 @@ class SquashedGaussianMLPActor(nn.Module):
         self.num_dis_actions = num_dis_actions
 
         if discrete:
-            self.net = util.mlp(list(obs_dim) + list(hidden_sizes) + list([num_dis_actions]), activation, None)
+            self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([num_dis_actions]), activation, None)
             self.soft_max = nn.Softmax(-1)
         else:
-            self.net = util.mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
+            self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
             self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
             self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])            
 
@@ -119,10 +119,10 @@ class MLPQFunction(nn.Module):
         self.discrete = discrete
         self.num_dis_actions = num_dis_actions
         if discrete:
-            self.q = util.mlp(list(obs_dim) + list(hidden_sizes) + list([num_dis_actions]), activation)            
+            self.q = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([num_dis_actions]), activation)            
         else:
             #Cat obs and act dims for input layer, add hidden layers, add output Q.
-            self.q = util.mlp(list(obs_dim + act_dim) + list(hidden_sizes) + list([1]), activation)
+            self.q = funcs.mlp(list(obs_dim + act_dim) + list(hidden_sizes) + list([1]), activation)
 
     def forward(self, input = list):
         obs = input[0]
@@ -148,9 +148,9 @@ class MLPActorCritic(nn.Module):
         self.q2targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation)
         
         #Freeze target networks, these are updated with a Polyak average.
-        util.freeze_thaw_parameters(self.q1targ)
-        util.freeze_thaw_parameters(self.q2targ)
-
+        funcs.freeze_thaw_parameters(self.q1targ)
+        funcs.freeze_thaw_parameters(self.q2targ)
+    
     def act(self, obs, deterministic=False):
         with torch.no_grad():
             a, _ = self.pi(obs, deterministic, with_logprob=False)

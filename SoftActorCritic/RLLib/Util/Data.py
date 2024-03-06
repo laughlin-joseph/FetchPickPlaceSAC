@@ -3,9 +3,10 @@ import numpy as np
 import operator
 import random
 import torch
-import RLLib.Util.Functions as util
+import RLLib.Util.Functions as funcs
+import RLLib.Util.Schedules as schedules
 
-class SegmentTree():
+class SegmentTree:
     def __init__(self, size, operation, ne):
         assert size > 0 and size & (size - 1) == 0, "size must be positive and a power of 2."
         self._size = size
@@ -52,7 +53,7 @@ class SegmentTree():
 
 class SumSegmentTree(SegmentTree):
     def __init__(self, size):
-        super().__init__(size=size, operation=operator.add, neutral_element=0.0)
+        super().__init__(size=size, operation=operator.add, ne=0.0)
 
     def sum(self, start=0, end=None):
         return self.reduce(start, end)
@@ -70,7 +71,7 @@ class SumSegmentTree(SegmentTree):
 
 class MinSegmentTree(SegmentTree):
     def __init__(self, size):
-        super().__init__(size=size, operation=min, neutral_element=float('inf'))
+        super().__init__(size=size, operation=min, ne=float('inf'))
 
     def min(self, start=0, end=None):
         return self.reduce(start, end)
@@ -82,10 +83,10 @@ class GoalUpdateStrategy(Enum):
             
 class ReplayBuffer:
     def __init__(self, obs_dim, act_dim, size, device):
-        self.obs_buf = np.zeros(util.combined_shape(size, obs_dim), dtype=np.float32)
-        self.act_buf = np.zeros(util.combined_shape(size, act_dim), dtype=np.float32)
+        self.obs_buf = np.zeros(funcs.combined_shape(size, obs_dim), dtype=np.float32)
+        self.act_buf = np.zeros(funcs.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.o_next_buf = np.zeros(util.combined_shape(size, obs_dim), dtype=np.float32)
+        self.o_next_buf = np.zeros(funcs.combined_shape(size, obs_dim), dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         
         self.ptr, self.size, self.max_size, self.device = -1, 0, size, device
@@ -114,8 +115,8 @@ class HindsightExperienceReplayBuffer(ReplayBuffer):
     def __init__(self, obs_dim, act_dim, goal_dim, size, device,
                  strat=GoalUpdateStrategy.FINAL, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, k=4):
         super().__init__(obs_dim, act_dim, size, device)
-        self.desired_goal_buf = np.zeros(util.combined_shape(size, goal_dim), dtype=np.float32)
-        self.achieved_goal_buf = np.zeros(util.combined_shape(size, goal_dim), dtype=np.float32)
+        self.desired_goal_buf = np.zeros(funcs.combined_shape(size, goal_dim), dtype=np.float32)
+        self.achieved_goal_buf = np.zeros(funcs.combined_shape(size, goal_dim), dtype=np.float32)
         self.strat = strat
         self.k = k
         self.HER_obs_pr = HER_obs_pr
@@ -190,11 +191,13 @@ class HindsightExperienceReplayBuffer(ReplayBuffer):
                                     process_list[idx]['ach'])
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, obs_dim, act_dim, size, device, alpha):
+    def __init__(self, obs_dim, act_dim, size, device, alpha, beta, total_steps):
         super().__init__(obs_dim, act_dim, size, device)
         assert alpha >= 0
         self.alpha = alpha
-    
+        
+        self.beta_sched = schedules.LinearSchedule(total_steps, 1, beta)
+
         tree_size = 1
         while tree_size < size:
             tree_size *= 2
@@ -205,12 +208,14 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         
     def store(self, obs, act, rew, obs_next, done):
         tree_idx = (self.ptr+1) % self.max_size
-        super().store(self, obs, act, rew, obs_next, done)
-        self._tree_sum[tree_idx] = self._max_priority ** self._alpha
-        self._tree_min[tree_idx] = self._max_priority ** self._alpha
+        super().store(obs, act, rew, obs_next, done)
+        self._tree_sum[tree_idx] = self._max_priority ** self.alpha
+        self._tree_min[tree_idx] = self._max_priority ** self.alpha
     
-    def sample_batch(self, beta=.5, batch_size=50):
-        assert beta > 0
+    def sample_batch(self, step, beta: float = None, batch_size=50):        
+        if beta is None:
+            beta = self.beta_sched.get_step_val(step)
+        assert (0 < beta and beta <= 1)
         indexes = self._sample_proportional(batch_size)
 
         weights = []
@@ -219,9 +224,10 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
         for index in indexes:
             p_sample = self._tree_sum[index] / self._tree_sum.sum()
-            weight = (p_sample * len(self._storage)) ** (-beta)
+            weight = (p_sample * self.size) ** (-beta)
             weights.append(weight / max_weight)
         weights = np.array(weights)
+        indexes = np.array(indexes)
         
         batch = dict(obs=self.obs_buf[indexes],
                 act=self.act_buf[indexes],
@@ -229,7 +235,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
                 o_next=self.o_next_buf[indexes],
                 done=self.done_buf[indexes],
                 weights=weights, 
-                indexes=np.array(indexes))
+                indexes=indexes)
         
         return {k: torch.as_tensor(v, dtype=torch.float32, device=self.device) for k,v in batch.items()}
 
@@ -238,8 +244,8 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         for index, priority in zip(indexes, priorities):
             assert priority > 0
             assert 0 <= index < self.size
-            self._tree_sum[index] = priority ** self._alpha
-            self._tree_min[index] = priority ** self._alpha
+            self._tree_sum[index] = priority ** self.alpha
+            self._tree_min[index] = priority ** self.alpha
 
             self._max_priority = max(self._max_priority, priority)
             
