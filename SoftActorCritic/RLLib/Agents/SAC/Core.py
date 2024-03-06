@@ -12,7 +12,10 @@ class SquashedGaussianMLPActor(nn.Module):
         if self._mu is None:
             return 0
         else:
-            return self._mu
+            if isinstance(self._mu, torch.Tensor):
+                return self._mu.squeeze() 
+            else: 
+                return self._mu
 
     @mu.setter
     def mu(self, value):
@@ -23,7 +26,10 @@ class SquashedGaussianMLPActor(nn.Module):
         if self._std is None:
             return 0
         else:
-            return self._std
+            if isinstance(self._std, torch.Tensor):
+                return self._std.squeeze() 
+            else: 
+                return self._std
 
     @std.setter
     def std(self, value):

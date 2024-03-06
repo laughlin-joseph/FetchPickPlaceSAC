@@ -482,8 +482,8 @@ class SACAgent:
                         _, probs = self.ac.pi(test_o, deterministic=False)
                         histo_vals = funcs.sample_categorical(probs[1])
                     else:
-                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.squeeze(-1).mean(axis=-1), global_step=epoch)
-                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.squeeze(-1).mean(axis=-1), global_step=epoch)
+                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=-1), global_step=epoch)
+                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=-1), global_step=epoch)
                         histo_vals = funcs.sample_normal(self.ac.pi.mu, self.ac.pi.std)
                     
                     self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)
