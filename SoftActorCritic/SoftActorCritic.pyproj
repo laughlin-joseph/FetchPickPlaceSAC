@@ -21,6 +21,8 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="RLLib\Agents\PPO\Agent.py" />
+    <Compile Include="RLLib\Agents\PPO\Core.py" />
     <Compile Include="RLLib\Agents\SAC\Agent.py" />
     <Compile Include="RLLib\Agents\SAC\Core.py" />
     <Compile Include="RLLib\Agents\__init__.py" />
@@ -34,6 +36,7 @@
   <ItemGroup>
     <Folder Include="RLLib\" />
     <Folder Include="RLLib\Agents\" />
+    <Folder Include="RLLib\Agents\PPO\" />
     <Folder Include="RLLib\Agents\SAC\" />
     <Folder Include="RLLib\Util\" />
   </ItemGroup>

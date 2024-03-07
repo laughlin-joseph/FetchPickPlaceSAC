@@ -21,7 +21,9 @@ class SACAgent:
             self.log = enable_logging
             self._tboard_started = False
             #Add the summary writer to self.
-            funcs.create_summary_writer(self)
+            net_writers = funcs.create_summary_writer(self, ['Actor','Critic'])
+            self.pi_writer = net_writers['Actor']
+            self.q_writer = net_writers['Critic']
             #Collect and clean input args.
             params = copy.copy(locals())
             env_name = env.spec.id
@@ -152,8 +154,8 @@ class SACAgent:
         state.pop('test_env', None)
         state.pop('replay_buffer', None)
         state.pop('writer', None)
-        state.pop('piwriter', None)
-        state.pop('qwriter', None)
+        state.pop('pi_writer', None)
+        state.pop('q_writer', None)
         return state
 
     def __setstate__(self, state):

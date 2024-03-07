@@ -4,20 +4,35 @@ import numpy as np
 from RLLib.Agents.SAC.Agent import SACAgent
 
 Agent=None
-env_str='MountainCarContinuous-v0'
+env_str='CartPole-v1'
 hidden=[512,512]
 epoch_count=200
-epoch_steps=25000
-ep_len=500
+epoch_steps=2500
+ep_len=50
 w_HER=False
 HER_obs_proc=lambda obs: None
 HER_rew_function=lambda exp :0
 w_PER=True
-start_steps=125000
+start_steps=12500
 train_agent=True
 test_agent=True
 log_agent=True
 test_every=10
+
+#env_str='HandManipulateBlock-v1'
+#hidden=[512,512,512]
+#epoch_count=200
+#epoch_steps=5000
+#ep_len=50
+#w_HER=True
+#HER_obs_proc=lambda obs: None
+#HER_rew_function=lambda exp :0
+#w_PER=False
+#start_steps=25000
+#train_agent=True
+#test_agent=True
+#log_agent=True
+#test_every=10
 
 #env_str='FetchPickAndPlace-v2'
 #hidden=[512,512]

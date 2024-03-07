@@ -5,6 +5,7 @@ import gymnasium as gym
 import numpy as np
 import os
 import random
+import scipy.signal
 from tensorboard import program
 import torch
 import torch.nn as nn
@@ -15,21 +16,39 @@ def combined_shape(length, shape=None):
         return (length,)
     return (length, shape) if np.isscalar(shape) else (length, *shape)
 
-def count_vars(module):
-    return sum([np.prod(p.shape) for p in module.parameters()])
-
-def create_summary_writer(agent, log_dir_name='logdata'):
+def create_summary_writer(agent, log_dir_name='logdata', net_names=[]):
     if not hasattr(agent, 'root_dir') or not agent.root_dir:
        set_dirs(agent)
+    net_writers = {}
     
     base_log_dir = os.path.join(agent.root_dir, log_dir_name)
     agent.log_data_dir = base_log_dir
-    pi_graph_dir = os.path.join(base_log_dir, 'Actor')
-    q_graph_dir = os.path.join(base_log_dir, 'Critic')
 
     agent.writer = SummaryWriter(base_log_dir)
-    agent.piwriter = SummaryWriter(pi_graph_dir)
-    agent.qwriter = SummaryWriter(q_graph_dir)
+
+    if net_names:
+        for name in net_names:    
+            cur_path = os.path.join(base_log_dir, name)
+            net_writers['name'] = SummaryWriter(cur_path)
+            
+    return  net_writers
+
+def discount_cumsum(x, discount):
+    """
+    magic from rllab for computing discounted cumulative sums of vectors.
+
+    input: 
+        vector x, 
+        [x0, 
+         x1, 
+         x2]
+
+    output:
+        [x0 + discount * x1 + discount^2 * x2,  
+         x1 + discount * x2,
+         x2]
+    """
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 def freeze_thaw_parameters(module, freeze=True):
     if freeze:
