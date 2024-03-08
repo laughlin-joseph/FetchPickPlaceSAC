@@ -129,7 +129,7 @@ class PPOAgent:
             loss_pi, pi_info = self.compute_loss_pi(data)
             kl = pi_info['kl']
             if kl > 1.5 * self.target_kl:
-                print('Early stopping at step %d due to reaching max kl.'%i)
+                print('Early termination at step %d due to reaching max divergence.'%i)
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
