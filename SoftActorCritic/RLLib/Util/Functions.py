@@ -29,7 +29,7 @@ def create_summary_writer(agent, log_dir_name='logdata', net_names=[]):
     if net_names:
         for name in net_names:    
             cur_path = os.path.join(base_log_dir, name)
-            net_writers['name'] = SummaryWriter(cur_path)
+            net_writers[name] = SummaryWriter(cur_path)
             
     return  net_writers
 

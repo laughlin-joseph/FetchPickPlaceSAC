@@ -22,9 +22,7 @@ class PPOAgent:
             self.log = enable_logging
             self._tboard_started = False
             #Add the summary writer to self.
-            net_writers = funcs.create_summary_writer(self, ['Actor','Critic'])
-            self.pi_writer = net_writers['Actor']
-            self.critic_writer = net_writers['Critic']
+            funcs.create_summary_writer(self)
             #Collect and clean input args.
             params = copy.copy(locals())
             env_name = env.spec.id
@@ -55,23 +53,16 @@ class PPOAgent:
         self.train_valfunc_iters = train_valfunc_iters
         self.target_kl = target_kl
 
-        #Configure obs, act, and goal dims if required for HER.
-        #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.        
+        #Configure obs and act dims.
         self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict)
         self.obs_dim, self.act_dim = funcs.get_environment_shape(self)
 
         #Create AC nets.
         self.ac = core.MLPActorCritic(self, hidden_sizes, activation=nn.Tanh)    
-        self.ac.to(self.device)
-
-        if self.log:
-            obs_test = torch.rand(tuple(self.obs_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
-            self.piwriter.add_graph(self.ac.pi, obs_test)
-            self.qwriter.add_graph(self.ac.q1, [[obs_test]])
-            
+        self.ac.to(self.device)            
 
         #Create PPO buffer, set size to steps_per_epoch for online training.
-        self.epoch_buffer = data.PPOBuffer(self.obs_dim, self.act_dim, steps_per_epoch, gamma, lam)
+        self.epoch_buffer = data.PPOBuffer(self.obs_dim, self.act_dim, steps_per_epoch, self.device, gamma, lam)
 
         #Epochs and episode length.
         self.steps_per_epoch = steps_per_epoch
@@ -80,7 +71,7 @@ class PPOAgent:
         self.save_freq_epoch = save_freq_epoch
 
         #Optim for trained nets.
-        self.valfunc_optimizer = Adam(self.ac.v.parameters(), lr=valfunc_lr)
+        self.valfunc_optimizer = Adam(self.ac.value.parameters(), lr=valfunc_lr)
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
 
         #Test env wrap for recording and test data loading.
@@ -95,19 +86,12 @@ class PPOAgent:
         state = self.__dict__.copy()
         state.pop('env', None)
         state.pop('test_env', None)
-        state.pop('replay_buffer', None)
+        state.pop('epoch_buffer', None)
         state.pop('writer', None)
-        state.pop('pi_writer', None)
-        state.pop('critic_writer', None)
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-
-
-
-
-
 
     # Set up function for computing PPO policy loss
     def compute_loss_pi(self, data):
@@ -131,7 +115,7 @@ class PPOAgent:
     # Set up function for computing value loss
     def compute_loss_value(self, data):
         obs, ret = data['obs'], data['ret']
-        return ((self.ac.v(obs) - ret)**2).mean()
+        return ((self.ac.value(obs) - ret)**2).mean()
 
     def update(self):
         data = self.epoch_buffer.get()
@@ -172,7 +156,7 @@ class PPOAgent:
         #Begin testing.
         for _ in range(self.max_ep_len):
 
-            a = self.get_action(o)
+            a = self.ac.act(o)
             
             obs, r, terminated, truncated, info = self.test_env.step(a)             
             o = obs if self.obs_not_dict else obs['observation']
@@ -192,37 +176,35 @@ class PPOAgent:
     def train(self):
         # Prepare for interaction with environment
         start_time = time.time()
-        o, ep_ret, ep_len = self.env.reset(), 0, 0
+        o, info = self.env.reset()
+        ep_ret, ep_len = 0,0
 
         # Main loop: collect experience in env and update/log each epoch
         for epoch in range(self.epochs):
             for t in range(self.steps_per_epoch):
-                a, v, logp = self.ac.step(torch.as_tensor(o, dtype=torch.float32))
+                a, val, logp = self.ac.step(o)
 
-                next_o, r, d, _ = self.env.step(a)
+                o_next, r, terminated, truncated, info = self.env.step(a)
                 ep_ret += r
                 ep_len += 1
 
-                # save and log
-                self.epoch_buffer.store(o, a, r, v, logp)
+                #Add transition to buffer.
+                self.epoch_buffer.store(o, a, r, val, logp)
             
-                # Update obs (critical!)
-                o = next_o
+                #Update observation from step.
+                o = o_next
 
-                timeout = ep_len == self.max_ep_len
-                terminal = d or timeout
                 epoch_ended = t==self.steps_per_epoch-1
 
-                if terminal or epoch_ended:
-                    if epoch_ended and not(terminal):
-                        print('Warning: trajectory cut off by epoch at %d steps.'%ep_len, flush=True)
-                    # if trajectory didn't reach terminal state, bootstrap value target
-                    if timeout or epoch_ended:
-                        _, v, _ = self.ac.step(torch.as_tensor(o, dtype=torch.float32))
+                if terminated or truncated or epoch_ended:
+                    if epoch_ended and not(terminated or truncated):
+                        print('Warning: Premature episode end due to end of epoch at %d steps.' % ep_len)
+                        _, val, _ = self.ac.step(torch.as_tensor(o, dtype=torch.float32))                        
                     else:
-                        v = 0
-                    self.epoch_buffer.finish_path(v)
-                    o, ep_ret, ep_len = self.env.reset(), 0, 0
+                        val = 0
+                    self.epoch_buffer.finish_path(val)
+                    o, info = self.env.reset()
+                    ep_ret, ep_len = 0,0
 
             # Perform PPO update!
             ep_loss_pi, ep_loss_value = self.update()       
@@ -245,8 +227,8 @@ class PPOAgent:
                 #Histograms
                 if self.action_discrete:
                     test_o = torch.as_tensor(o.reshape(1, *self.obs_dim), dtype=torch.float32, device=self.device)
-                    _, probs = self.ac.pi(test_o, deterministic=False)
-                    histo_vals = funcs.sample_categorical(probs[1])
+                    dist, _ = self.ac.pi(test_o)
+                    histo_vals = dist.sample((100,))
                 else:
                     self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=-1), global_step=epoch)
                     self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=-1), global_step=epoch)

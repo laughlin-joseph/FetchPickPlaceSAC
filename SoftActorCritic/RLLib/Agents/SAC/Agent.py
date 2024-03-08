@@ -21,7 +21,7 @@ class SACAgent:
             self.log = enable_logging
             self._tboard_started = False
             #Add the summary writer to self.
-            net_writers = funcs.create_summary_writer(self, ['Actor','Critic'])
+            net_writers = funcs.create_summary_writer(self, net_names=['Actor','Critic'])
             self.pi_writer = net_writers['Actor']
             self.q_writer = net_writers['Critic']
             #Collect and clean input args.
@@ -125,11 +125,11 @@ class SACAgent:
         if self.log:
             obs_test = torch.rand(tuple(self.net_obs_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
             act_test = torch.rand(tuple(self.act_dim)).uniform_(-1, 1).unsqueeze(0).to(self.device)
-            self.piwriter.add_graph(self.ac.pi, obs_test)
+            self.pi_writer.add_graph(self.ac.pi, obs_test)
             if self.action_discrete:
-                self.qwriter.add_graph(self.ac.q1, [[obs_test]])
+                self.q_writer.add_graph(self.ac.q1, [[obs_test]])
             else:
-                self.qwriter.add_graph(self.ac.q1, [[obs_test, act_test]])
+                self.q_writer.add_graph(self.ac.q1, [[obs_test, act_test]])
 
         #Optim for trained networks actor, critic1, and critic2. Optim for temp dual func.
         self.pi_optimizer = torch.optim.Adam(self.ac.pi.parameters(), lr=lr)
