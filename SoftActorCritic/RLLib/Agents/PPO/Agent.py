@@ -1,5 +1,5 @@
 import copy
-from datetime import datetime
+import datetime
 import gymnasium
 import gymnasium.spaces as spaces
 import time
@@ -175,7 +175,7 @@ class PPOAgent:
     
     def train(self):
         # Prepare for interaction with environment
-        start_time = time.time()
+        start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         o, info = self.env.reset()
         ep_ret, ep_len = 0,0
 
