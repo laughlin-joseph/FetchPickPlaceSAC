@@ -3,7 +3,7 @@ import numpy as np
 import datetime
 import torch
 import gymnasium.spaces as spaces
-import RLLib.Agents.SAC.Core as core
+import RLLib.Agents.SAC.Nets as nets
 import RLLib.Util.Functions as funcs
 import RLLib.Util.Data as data
 
@@ -117,7 +117,7 @@ class SACAgent:
 
         #Create actor critic networks and freeze targets.
         #For discrete SAC see the following paper: https://arxiv.org/pdf/1910.07207.pdf
-        self.ac = core.MLPActorCritic(self.net_obs_dim, self.act_dim, hidden_sizes,
+        self.ac = nets.MLPActorCritic(self.net_obs_dim, self.act_dim, hidden_sizes,
                                       discrete=self.action_discrete, num_dis_actions=self.num_discrete_actions,
                                       log_max=self.log_max, log_min=self.log_min)
         self.ac.to(self.device)

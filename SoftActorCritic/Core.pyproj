@@ -2,15 +2,16 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>58fde2ae-9975-4a14-9a5f-fcbcc5b49e12</ProjectGuid>
-    <ProjectHome>.</ProjectHome>
-    <StartupFile>TensorboardLauncher.py</StartupFile>
+    <ProjectGuid>b40bd6ba-e8b7-458c-845a-bea444701e66</ProjectGuid>
+    <ProjectHome>
+    </ProjectHome>
+    <StartupFile>SimpleControl.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
-    <Name>TensorboardLauncher</Name>
-    <RootNamespace>TensorboardLauncher</RootNamespace>
+    <Name>Core</Name>
+    <RootNamespace>SoftActorCritic</RootNamespace>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -21,10 +22,22 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="TensorboardLauncher.py" />
+    <Compile Include="RLLib\Agents\PPO\Agent.py" />
+    <Compile Include="RLLib\Agents\PPO\Nets.py" />
+    <Compile Include="RLLib\Agents\SAC\Agent.py" />
+    <Compile Include="RLLib\Agents\SAC\Nets.py" />
+    <Compile Include="RLLib\Util\Data.py" />
+    <Compile Include="RLLib\Util\Functions.py" />
+    <Compile Include="RLLib\Util\Schedules.py" />
+    <Compile Include="RLLib\Util\__init__.py" />
+    <Compile Include="SimpleControl.py" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="tensorboard.kv" />
+    <Folder Include="RLLib\" />
+    <Folder Include="RLLib\Agents\" />
+    <Folder Include="RLLib\Agents\PPO\" />
+    <Folder Include="RLLib\Agents\SAC\" />
+    <Folder Include="RLLib\Util\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

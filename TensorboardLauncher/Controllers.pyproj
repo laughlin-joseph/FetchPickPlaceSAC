@@ -2,15 +2,16 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>b40bd6ba-e8b7-458c-845a-bea444701e66</ProjectGuid>
-    <ProjectHome>.</ProjectHome>
-    <StartupFile>SoftActorCritic.py</StartupFile>
+    <ProjectGuid>58fde2ae-9975-4a14-9a5f-fcbcc5b49e12</ProjectGuid>
+    <ProjectHome>
+    </ProjectHome>
+    <StartupFile>TensorboardController.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
-    <Name>SoftActorCritic</Name>
-    <RootNamespace>SoftActorCritic</RootNamespace>
+    <Name>Controllers</Name>
+    <RootNamespace>TensorboardLauncher</RootNamespace>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -21,24 +22,10 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="RLLib\Agents\PPO\Agent.py" />
-    <Compile Include="RLLib\Agents\PPO\Core.py" />
-    <Compile Include="RLLib\Agents\SAC\Agent.py" />
-    <Compile Include="RLLib\Agents\SAC\Core.py" />
-    <Compile Include="RLLib\Agents\__init__.py" />
-    <Compile Include="RLLib\Util\Data.py" />
-    <Compile Include="RLLib\Util\Functions.py" />
-    <Compile Include="RLLib\Util\Schedules.py" />
-    <Compile Include="RLLib\Util\__init__.py" />
-    <Compile Include="RLLib\__init__.py" />
-    <Compile Include="SoftActorCritic.py" />
+    <Compile Include="TensorboardController.py" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="RLLib\" />
-    <Folder Include="RLLib\Agents\" />
-    <Folder Include="RLLib\Agents\PPO\" />
-    <Folder Include="RLLib\Agents\SAC\" />
-    <Folder Include="RLLib\Util\" />
+    <Content Include="tensorboard.kv" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

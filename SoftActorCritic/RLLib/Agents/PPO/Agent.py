@@ -6,7 +6,7 @@ import time
 import torch
 from torch import nn
 from torch.optim import Adam
-import RLLib.Agents.PPO.Core as core
+import RLLib.Agents.PPO.Nets as nets
 import RLLib.Util.Functions as funcs
 import RLLib.Util.Data as data
 
@@ -58,7 +58,7 @@ class PPOAgent:
         self.obs_dim, self.act_dim = funcs.get_environment_shape(self)
 
         #Create AC nets.
-        self.ac = core.MLPActorCritic(self, hidden_sizes, activation=nn.Tanh)    
+        self.ac = nets.MLPActorCritic(self, hidden_sizes, activation=nn.Tanh)    
         self.ac.to(self.device)            
 
         #Create PPO buffer, set size to steps_per_epoch for online training.
