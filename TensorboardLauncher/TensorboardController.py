@@ -1,9 +1,12 @@
 import os
 import subprocess
 from kivy.app import App
+from kivy.properties import ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.button import Button
 from kivy.lang import Builder
+from kivy.uix.popup import Popup
 from kivy.uix.textinput import TextInput
 from kivy.uix.label import Label
 from kivy.uix.filechooser import FileChooserIconView
@@ -14,7 +17,8 @@ class LoadDialog(FloatLayout):
     cancel = ObjectProperty(None)
 
 class LauncherGUI(BoxLayout):
-    pass
+    def __init__(self, **kwargs):
+        super(LauncherGUI, self).__init__(**kwargs)
 
 class TensorboardApp(App):
     def __init__(self, **kwargs):
@@ -29,6 +33,10 @@ class TensorboardApp(App):
     
     def dismiss_popup(self):
         self._popup.dismiss()
+
+    def load(self, path, filename):
+        with open(os.path.join(path, filename[0])) as stream:
+            self.text_input.text = stream.read()
 
     def select_directory(self, instance):
         content = LoadDialog(load=self.load, cancel=self.dismiss_popup)
