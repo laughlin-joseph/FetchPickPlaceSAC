@@ -34,20 +34,6 @@ def create_summary_writer(agent, log_dir_name='logdata', net_names=[]):
     return  net_writers
 
 def discount_cumsum(x, discount):
-    """
-    magic from rllab for computing discounted cumulative sums of vectors.
-
-    input: 
-        vector x, 
-        [x0, 
-         x1, 
-         x2]
-
-    output:
-        [x0 + discount * x1 + discount^2 * x2,  
-         x1 + discount * x2,
-         x2]
-    """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 def freeze_thaw_parameters(module, freeze=True):
@@ -63,7 +49,6 @@ def get_device():
 
 def get_environment_shape(agent):
     env = agent.env
-    device = get_device()
     obs_dim = 0
     act_dim = 0
     agent.action_discrete = False
