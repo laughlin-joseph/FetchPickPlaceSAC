@@ -9,7 +9,11 @@ from kivy.uix.label import Label
 from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.widget import Widget
 
-class LauncherGUI(Widget):
+class LoadDialog(FloatLayout):
+    load = ObjectProperty(None)
+    cancel = ObjectProperty(None)
+
+class LauncherGUI(BoxLayout):
     pass
 
 class TensorboardApp(App):
@@ -19,14 +23,24 @@ class TensorboardApp(App):
 
     def build(self):
         return LauncherGUI()
-        
-    def select_directory(self, instance):
-        file_chooser = FileChooserIconView()
-        file_chooser.bind(on_submit=self.directory_selected)
-        file_chooser.popup()
 
     def directory_selected(self, instance):
         self.file_path_input.text = instance.selection[0]
+    
+    def dismiss_popup(self):
+        self._popup.dismiss()
+
+    def select_directory(self, instance):
+        content = LoadDialog(load=self.load, cancel=self.dismiss_popup)
+        self._popup = Popup(title="Load file", content=content, size_hint=(0.9, 0.9))
+        self._popup.open()
+
+    def show_message(self, message):
+        popup = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        popup.add_widget(Label(text=message))
+        popup.add_widget(Button(text='Close', on_press=lambda *args: self.dismiss_popup()))
+        self._popup = popup
+        self._popup.open()
 
     def toggle_tensorboard(self, instance):
         directory_path = self.file_path_input.text
@@ -46,16 +60,6 @@ class TensorboardApp(App):
             self.tensorboard_process = None
             self.tensorboard_button.text = 'Start TensorBoard'
             self.show_message('TensorBoard stopped.')
-
-    def show_message(self, message):
-        popup = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        popup.add_widget(Label(text=message))
-        popup.add_widget(Button(text='Close', on_press=lambda *args: self.dismiss_popup()))
-        self.popup = popup
-        self.popup.open()
-
-    def dismiss_popup(self):
-        self.popup.dismiss()
         
 if __name__ == '__main__':
     TensorboardApp().run()

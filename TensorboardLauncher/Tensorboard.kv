@@ -1,17 +1,18 @@
 #:kivy 2.1.0
+
 <LauncherGUI>:
     BoxLayout:
         orientation: 'vertical'
         size: root.width, root.height
         padding: 10
         spacing: 10
-        pos_hint: {'y': 0.3}
+        pos_hint: {'center_x': 0.5, 'center_y': 0.8}
+        size_hint: 1.0, 0.1
 
         BoxLayout:
             size_hint_y: None
             height: 50
             spacing: 10
-            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
 
             TextInput:
                 id: directory_input
@@ -25,14 +26,12 @@
                 text: "Browse"
                 size_hint: 0.2, None
                 height: 40
-                on_press: app.select_directory()
+                on_press: app.select_directory(self)
 
         BoxLayout:
             size_hint_y: None
             height: 50
             spacing: 10
-            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-            size_hint_x: 1
 
             Button:
                 background_color: (0.3, 0.7, 0.5, 1)
@@ -49,3 +48,22 @@
                 width: 200
                 text: "Stop TensorBoard"
                 on_press: app.stop_tensorboard()
+
+<LoadDialog>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FileChooserListView:
+            id: filechooser
+
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
+
+            Button:
+                text: "Load"
+                on_release: root.load(filechooser.path, filechooser.selection)
