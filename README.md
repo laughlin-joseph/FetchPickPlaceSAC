@@ -1,13 +1,13 @@
-# A repoository for reinforcement learning exploration and development.  
+# A repository for reinforcement learning exploration and development.  
   
 ## Purpose  
-The devlopment of this repository is intended to explore modern reinforcement learning algorithms  
+The development of this repository is intended to explore modern reinforcement learning algorithms  
 using gymnasium environments, including gymnasium robotics environments:  
   
 [Gymnasium: https://gymnasium.farama.org/index.html](https://gymnasium.farama.org/index.html)  
 [Robotics: https://robotics.farama.org/index.html](https://robotics.farama.org/index.html)  
   
-> - Developmet uses Visual Studio for managing projects and debugging code.  
+> - Developed using Visual Studio for managing projects and debugging code.  
 > - Tensorboard is used for tracking model metrics during training,  
 > graph visualization, and presenting environment renderings.  
 > - Pytorch is used for building neural network modules.  
@@ -15,19 +15,19 @@ using gymnasium environments, including gymnasium robotics environments:
 > - Environments are managed using Anaconda.  
   
 Aditional algorithms will be added over time and new research will be integrated as  
-it becomes avilable and necessary.  
+it becomes available and necessary.  
   
 ## Useage  
   
 Development with Visual Studio is encouraged as that is what has been used so far.  
-> **If running in a windows environment use Python version 3.10.13 in a fresh Conda environment!**  
-> Tensorflow stopped being supported in windows environemnts some time ago  
+> **If running in a Windows environment use Python version 3.10.13 in a fresh Conda environment!**  
+> Tensorflow stopped being supported in Windows environements some time ago  
 > Using Anaconda to create an environment running Pythong version 3.10.13 will ensure  
 > that other dependencies will install properly and run without conflict.  
   
 ### The following packages should be installed:  
  - Pytorch  
- - Tensorflow (For using tensorboard.)  
+ - Tensorflow (For using Tensorboard.)  
  - Gymnasium  
  - Gymnasium-robotics  
  - Dill  (Operates on top of Pickle for more complex types.)  
