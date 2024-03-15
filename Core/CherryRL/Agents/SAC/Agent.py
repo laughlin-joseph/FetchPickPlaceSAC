@@ -3,9 +3,9 @@ import numpy as np
 import datetime
 import torch
 import gymnasium.spaces as spaces
-import RLLib.Agents.SAC.Nets as nets
-import RLLib.Util.Functions as funcs
-import RLLib.Util.Data as data
+import CherryRL.Agents.SAC.Nets as nets
+import CherryRL.Util.Functions as funcs
+import CherryRL.Util.Data as data
 
 class SACAgent:
     def __init__(self, env, hidden_sizes=[512,512], seed=1,

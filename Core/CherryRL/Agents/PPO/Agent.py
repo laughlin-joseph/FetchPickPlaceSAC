@@ -6,9 +6,9 @@ import time
 import torch
 from torch import nn
 from torch.optim import Adam
-import RLLib.Agents.PPO.Nets as nets
-import RLLib.Util.Functions as funcs
-import RLLib.Util.Data as data
+import CherryRL.Agents.PPO.Nets as nets
+import CherryRL.Util.Functions as funcs
+import CherryRL.Util.Data as data
 
 class PPOAgent:
     def __init__(self, env, hidden_sizes=[512,512], seed=1,

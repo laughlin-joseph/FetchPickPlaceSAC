@@ -27,6 +27,13 @@
   <ItemGroup>
     <Content Include="tensorboard.kv" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.pyproj">
+      <Name>Core</Name>
+      <Project>{f07644fc-274d-419a-86f4-d3c1f72b44f1}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
        Visual Studio and specify your pre- and post-build commands in

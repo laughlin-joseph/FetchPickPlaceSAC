@@ -1,6 +1,6 @@
 import gymnasium as gym
-from RLLib.Agents.SAC.Agent import SACAgent
-from RLLib.Agents.PPO.Agent import PPOAgent
+from CherryRL.Agents.SAC.Agent import SACAgent
+from CherryRL.Agents.PPO.Agent import PPOAgent
 
 train_agent = True
 

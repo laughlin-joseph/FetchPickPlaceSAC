@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
-import RLLib.Util.Functions as funcs
+import CherryRL.Util.Functions as funcs
 
 class SquashedGaussianMLPActor(nn.Module):
     @property

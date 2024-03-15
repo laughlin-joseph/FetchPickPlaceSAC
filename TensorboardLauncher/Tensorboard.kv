@@ -1,4 +1,5 @@
 #:kivy 2.1.0
+#:import getcwd os.getcwd
 
 <LauncherGUI>:
     BoxLayout:
@@ -26,7 +27,7 @@
                 text: "Browse"
                 size_hint: 0.2, None
                 height: 40
-                on_press: app.select_directory(self)
+                on_press: app.select_directory()
 
         BoxLayout:
             size_hint_y: None
@@ -36,18 +37,10 @@
             Button:
                 background_color: (0.3, 0.7, 0.5, 1)
                 font_size: 16
-                size_hint_x: 0.5
+                size_hint_x: None
                 width: 200
                 text: "Start TensorBoard"
-                on_press: app.start_tensorboard(directory_input.text)
-
-            Button:
-                background_color: (0.3, 0.7, 0.5, 1)
-                font_size: 16
-                size_hint_x: 0.5
-                width: 200
-                text: "Stop TensorBoard"
-                on_press: app.stop_tensorboard()
+                on_press: app.toggle_tensorboard(self)
 
 <LoadDialog>:
     BoxLayout:
@@ -56,6 +49,8 @@
         orientation: "vertical"
         FileChooserListView:
             id: filechooser
+            path: getcwd()
+            show_hidden: False
 
         BoxLayout:
             size_hint_y: None

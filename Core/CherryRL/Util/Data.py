@@ -3,8 +3,8 @@ import numpy as np
 import operator
 import random
 import torch
-import RLLib.Util.Functions as funcs
-import RLLib.Util.Schedules as schedules
+import CherryRL.Util.Functions as funcs
+import CherryRL.Util.Schedules as schedules
 
 class SegmentTree:
     def __init__(self, size, operation, ne):

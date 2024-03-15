@@ -2,7 +2,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>b40bd6ba-e8b7-458c-845a-bea444701e66</ProjectGuid>
+    <ProjectGuid>{f07644fc-274d-419a-86f4-d3c1f72b44f1}</ProjectGuid>
     <ProjectHome>
     </ProjectHome>
     <StartupFile>SimpleControl.py</StartupFile>
@@ -22,22 +22,21 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="RLLib\Agents\PPO\Agent.py" />
-    <Compile Include="RLLib\Agents\PPO\Nets.py" />
-    <Compile Include="RLLib\Agents\SAC\Agent.py" />
-    <Compile Include="RLLib\Agents\SAC\Nets.py" />
-    <Compile Include="RLLib\Util\Data.py" />
-    <Compile Include="RLLib\Util\Functions.py" />
-    <Compile Include="RLLib\Util\Schedules.py" />
-    <Compile Include="RLLib\Util\__init__.py" />
+    <Compile Include="CherryRL\Agents\PPO\Agent.py" />
+    <Compile Include="CherryRL\Agents\PPO\Nets.py" />
+    <Compile Include="CherryRL\Agents\SAC\Agent.py" />
+    <Compile Include="CherryRL\Agents\SAC\Nets.py" />
+    <Compile Include="CherryRL\Util\Data.py" />
+    <Compile Include="CherryRL\Util\Functions.py" />
+    <Compile Include="CherryRL\Util\Schedules.py" />
     <Compile Include="SimpleControl.py" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="RLLib\" />
-    <Folder Include="RLLib\Agents\" />
-    <Folder Include="RLLib\Agents\PPO\" />
-    <Folder Include="RLLib\Agents\SAC\" />
-    <Folder Include="RLLib\Util\" />
+    <Folder Include="CherryRL\" />
+    <Folder Include="CherryRL\Agents\" />
+    <Folder Include="CherryRL\Agents\PPO\" />
+    <Folder Include="CherryRL\Agents\SAC\" />
+    <Folder Include="CherryRL\Util\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
