@@ -11,9 +11,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Controllers", "TensorboardLauncher\Controllers.pyproj", "{58FDE2AE-9975-4A14-9A5F-FCBCC5B49E12}"
-EndProject
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Core", "Core\Core.pyproj", "{F07644FC-274D-419A-86F4-D3C1F72B44F1}"
+EndProject
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Controllers", "Controllers\Controllers.pyproj", "{58FDE2AE-9975-4A14-9A5F-FCBCC5B49E12}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,10 +21,10 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{58FDE2AE-9975-4A14-9A5F-FCBCC5B49E12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{58FDE2AE-9975-4A14-9A5F-FCBCC5B49E12}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F07644FC-274D-419A-86F4-D3C1F72B44F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F07644FC-274D-419A-86F4-D3C1F72B44F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{58FDE2AE-9975-4A14-9A5F-FCBCC5B49E12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{58FDE2AE-9975-4A14-9A5F-FCBCC5B49E12}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
