@@ -37,7 +37,12 @@ Development with Visual Studio is encouraged as that is what has been used so fa
   
 ## Execution  
 
-To Be Updated  
+The Core project has the file SimpleControl.py, this file serves as a simple control script for training  
+agents. See the examples in the current file, but in general, one should instantiate their agent of choice,  
+and then call the desired method on it.
+
+At the very least, take look at the agent constructors under CherryRL.Agents.<AgentOfChoice>.Agent.  
+The code is meant to be read and the agents have quite a few configurable parameters.
 
 ## Generated Content  
 
