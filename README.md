@@ -20,7 +20,7 @@ it becomes available and necessary.
 ## Useage  
   
 Development with Visual Studio is encouraged as that is what has been used so far.  
-> **If running om a Windows OS use Python version 3.10.13 in a fresh Conda environment!**  
+> **If running on a Windows OS use Python version 3.10.13 in a fresh Conda environment!**  
 > Tensorflow stopped being supported in Windows some time ago  
 > Using Anaconda to create an environment running Pythong version 3.10.13 will ensure  
 > that other dependencies will install properly and run without conflict.  
@@ -36,15 +36,34 @@ Development with Visual Studio is encouraged as that is what has been used so fa
  - Kivy  
   
 ## Execution  
-
+  
 The Core project has the file SimpleControl.py, this file serves as a simple control script for training  
 agents. See the examples in the current file, but in general, one should instantiate their agent of choice,  
-and then call the desired method on it.
-
+and then call the desired method on it.  
+  
 At the very least, take look at the agent constructors under CherryRL.Agents.<AgentOfChoice>.Agent.  
 The code is meant to be read and the agents have quite a few configurable parameters.
 
+Tensorboard can be automatically started during training to track model progress. Learning Curves, networkout  
+output, and epoch returns are tracked, if testing is enabled rendered output of the test episode can also be  
+captured and hosted on Tensorboard.  
+  
+Use the basic Tensorboard launcher app to start Tensorboard on saved data. Target the root of the logging directory  
+that contains the desired data and hit the "Start Tensorboard" button. Tensorboard should start on the default port of 6006.  
+I may add support to train, load, and save agents at a later date.  
+  
 ## Generated Content  
-
+  
 Pickle files, Tensorboard logging data, and test sequence video files are saved in the project  
-directory by default using a date and time naming convention.
+directory by default using a date and time naming convention.  
+  
+##Implemented so far:  
+  
+###Soft Actor Critic  
+**Discrete:**  
+Though initially designed for continuous environments this repo contains an implementation capable of handling them.  
+
+**Continuius**  
+This is where the SAC algorithm shines.  
+  
+###Proximal Policy Optimization
