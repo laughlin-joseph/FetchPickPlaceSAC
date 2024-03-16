@@ -20,8 +20,8 @@ it becomes available and necessary.
 ## Useage  
   
 Development with Visual Studio is encouraged as that is what has been used so far.  
-> **If running in a Windows environment use Python version 3.10.13 in a fresh Conda environment!**  
-> Tensorflow stopped being supported in Windows environements some time ago  
+> **If running om a Windows OS use Python version 3.10.13 in a fresh Conda environment!**  
+> Tensorflow stopped being supported in Windows some time ago  
 > Using Anaconda to create an environment running Pythong version 3.10.13 will ensure  
 > that other dependencies will install properly and run without conflict.  
   
