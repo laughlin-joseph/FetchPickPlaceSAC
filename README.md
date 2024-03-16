@@ -57,7 +57,7 @@ I may add support to train, load, and save agents at a later date.
 Pickle files, Tensorboard logging data, and test sequence video files are saved in the project  
 directory by default using a date and time naming convention.  
   
-## Implemented so far:  
+## Implemented so far  
   
 ### Soft Actor Critic  
 **Discrete:**  
@@ -66,4 +66,14 @@ Though initially designed for continuous environments this repo contains an impl
 **Continuius**  
 This is where the SAC algorithm shines.  
   
-### Proximal Policy Optimization
+### Proximal Policy Optimization  
+**Discrete:**  
+  
+**Continuius**  
+  
+### Special thanks  
+[Farama Foundation](https://farama.org/)  
+[OpeAI](https://github.com/openai)  
+[Alexander Van de Kleut](https://github.com/avandekleut)  
+[Petros Christodoulou](https://github.com/p-christ)  
+[Haibin Zhou et. al.](https://github.com/coldsummerday)  
