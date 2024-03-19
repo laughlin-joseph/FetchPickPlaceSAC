@@ -65,6 +65,7 @@ Though initially designed for continuous environments this repo contains an impl
 
 **Continuius**  
 This is where the SAC algorithm shines.  
+![Learning curve with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPP_20_Epc_LC_HER_SPARSE.PNG?raw=true)
   
 ### Proximal Policy Optimization  
 **Discrete:**  
