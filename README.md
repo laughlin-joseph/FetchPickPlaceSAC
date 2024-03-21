@@ -76,7 +76,7 @@ Compared to:
 Results:  
 | Without HER      | With HER |
 | ----------- | ----------- |
-| [Header](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif)      | [Title](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif)       |
+| [Without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif?raw=true)      | [With HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif?raw=true)       |
   
 ### Proximal Policy Optimization  
 **Discrete:**  
