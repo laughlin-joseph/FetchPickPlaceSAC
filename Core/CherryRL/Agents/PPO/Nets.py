@@ -7,8 +7,8 @@ from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
 import CherryRL.Util.Functions as funcs
 
+#Shared actor components for derived classes, abstract base class.
 class Actor(nn.Module, ABC):
-
     def _distribution(self, obs):
         raise NotImplementedError
 
@@ -16,17 +16,16 @@ class Actor(nn.Module, ABC):
         raise NotImplementedError
 
     def forward(self, obs, act=None):
-        # Produce action distributions for given observations, and 
-        # optionally compute the log likelihood of given actions under
-        # those distributions.
+        #Produce action distributions for a given set of observations, and 
+        #calculate the log likelihood for selected actions within produced distributions.
         pi = self._distribution(obs)
         logp_a = None
         if act is not None:
             logp_a = self._log_prob_from_distribution(pi, act)
         return pi, logp_a
 
+#Actor net for discrete action spaces.
 class MLPCategoricalActor(Actor):
-    
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         self.logits_net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([act_dim]), activation)
@@ -38,8 +37,8 @@ class MLPCategoricalActor(Actor):
     def _log_prob_from_distribution(self, pi, act):
         return pi.log_prob(act)
 
+#Actor net for continuous action spaces.
 class MLPGaussianActor(Actor):
-
     @property
     def mu(self):
         if self._mu is None:
@@ -74,7 +73,7 @@ class MLPGaussianActor(Actor):
         self._mu = 0
         self._std = 0
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
-        self.mu_net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([act_dim]), activation)
+        self.mu_net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(act_dim), activation)
 
     def _distribution(self, obs):
         mu = self.mu_net(obs)
@@ -87,7 +86,6 @@ class MLPGaussianActor(Actor):
         return pi.log_prob(act).sum(axis=-1)
 
 class MLPCritic(nn.Module):
-
     def __init__(self, obs_dim, hidden_sizes, activation):
         super().__init__()
         self.value_net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([1]), activation)
@@ -96,7 +94,6 @@ class MLPCritic(nn.Module):
         return torch.squeeze(self.value_net(obs), -1)
 
 class MLPActorCritic(nn.Module):
-
     def __init__(self, agent, hidden_sizes=[256,256], activation=nn.Tanh):
         super().__init__()
         self.device = agent.device

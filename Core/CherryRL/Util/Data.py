@@ -95,7 +95,7 @@ class PPOBuffer:
         self.ptr, self.path_start_idx, self.max_size, self.device = 0, 0, size, device
 
     def store(self, obs, act, rew, val, logp):
-        assert self.ptr < self.max_size     # buffer has to have room so you can store
+        assert self.ptr < self.max_size
         self.obs_buf[self.ptr] = obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew

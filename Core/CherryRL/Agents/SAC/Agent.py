@@ -11,7 +11,7 @@ class SACAgent:
     def __init__(self, env, hidden_sizes=[512,512], seed=1,
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
                  gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, ent_pen_scale=0.5, q_clip=0.5, log_max=2, log_min=-10,
-                 batch_size=1024, replay_buffer_size=int(1e6),
+                 batch_size=1024, replay_buffer_size=int(1e6), add_goal_to_obs=False,
                  use_HER=False, HER_obs_pr=lambda obs: None, HER_rew_func=lambda exp:0, HER_strat=data.GoalUpdateStrategy.FUTURE, HER_k=1,
                  use_PER=False, PER_Alpha=.6, PER_Beta=.4, PER_Epsilon=1e-6,
                  start_exploration_steps=25000, update_after_steps=10000, update_every_steps=100,
@@ -57,6 +57,7 @@ class SACAgent:
         #Set Gen Buffer props.
         self.replay_buffer_size = replay_buffer_size
         self.batch_size = batch_size
+        self.add_goal_to_obs = add_goal_to_obs
         if (self.use_HER and self.use_PER):
             raise ValueError('Cannot use HER and PER at the same time.')
 
@@ -72,13 +73,12 @@ class SACAgent:
 
         #Configure obs, act, and goal dims if required for HER.
         #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.        
-        self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict)
-        self.obs_dim, self.act_dim = funcs.get_environment_shape(self)
+        funcs.get_environment_shape(self)
 
-        if self.use_HER:
+        if self.use_HER or self.add_goal_to_obs:
             if self.obs_not_dict:
-                if self.HER_obs_pr is None:
-                    raise ValueError('Cannot use HER without goal information. HER_obs_pr returns None.')
+                if not self.HER_obs_pr and not self.add_goal_to_obs:
+                    raise ValueError('Cannot use HER without goal information. HER_obs_pr is not defined.')
                 else:
                     test_ob = torch.rand(tuple(self.obs_dim)).uniform_(-1, 1)
                     res = self.HER_obs_pr(test_ob)
@@ -111,7 +111,7 @@ class SACAgent:
         self.log_temp.requires_grad = True
         #See https://arxiv.org/pdf/2209.10081.pdf Notes following equation 10 in section 3.
         if self.action_discrete:
-            self.target_entropy = -np.log((1.0 / self.num_discrete_actions)) * 0.98
+            self.target_entropy = -np.log((1.0 / self.num_discrete_actions[0])) * 0.98
         else:
             self.target_entropy = -self.act_dim[0]
 
@@ -285,7 +285,8 @@ class SACAgent:
                 alpha=self.PER_Alpha, beta=self.PER_Beta, total_steps=(self.epochs * self.steps_per_epoch))
         
         else:
-            self.replay_buffer = data.ReplayBuffer(obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
+            local_obs_dim = self.net_obs_dim if self.add_goal_to_obs else self.obs_dim
+            self.replay_buffer = data.ReplayBuffer(obs_dim=local_obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
 
     def update(self, data):
         #GD for Q1 and Q2.
@@ -362,7 +363,7 @@ class SACAgent:
 
         #Begin testing.
         for _ in range(self.max_ep_len):
-            if self.use_HER:
+            if self.use_HER or self.add_goal_to_obs:
                 if self.obs_not_dict:
                     res = self.replay_buffer.HER_obs_pr(obs)
                     dg = res[0]
@@ -397,6 +398,9 @@ class SACAgent:
         test_rew, test_info = 0, None
         terminated, truncated, dg, ag = False, False, [], []
         o = obs_Next if self.obs_not_dict else obs_Next['observation']
+        if self.add_goal_to_obs:
+                dg, ag = obs_Next['desired_goal'], obs_Next['achieved_goal']
+                cato = np.concatenate((o,dg),0)
         for t in range(total_steps):
 
             #We start off randomly exploring the environment until
@@ -404,7 +408,7 @@ class SACAgent:
             if t < self.start_exploration_steps:
                 a = self.env.action_space.sample()
             else:
-                if self.use_HER:
+                if self.use_HER or self.add_goal_to_obs:
                     #    |\__/,|   (`\
                     #  _.|o o  |_   ) )
                     #-(((---(((--------
@@ -418,7 +422,9 @@ class SACAgent:
             
             #Handle Mujoco environment obs.
             o_next = obs_Next if self.obs_not_dict else obs_Next['observation']
-            if self.use_HER:
+            if self.add_goal_to_obs:
+                cato_next = np.concatenate((o_next,dg),0)
+            if self.use_HER or self.add_goal_to_obs:
                 if self.obs_not_dict:
                     res  = self.replay_buffer.HER_obs_pr(obs_Next)
                     dg, ag = res[0], res[1]
@@ -435,6 +441,8 @@ class SACAgent:
             #Send experience to replay buffer.
             if self.use_HER:
                 self.replay_buffer.store(o, a, r, o_next, done, dg, ag)
+            elif self.add_goal_to_obs:
+                self.replay_buffer.store(cato, a, r, cato_next, done)
             else:
                 self.replay_buffer.store(o, a, r, o_next, done)
 
@@ -484,8 +492,8 @@ class SACAgent:
                         _, probs = self.ac.pi(test_o, deterministic=False)
                         histo_vals = funcs.sample_categorical(probs[1])
                     else:
-                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=-1), global_step=epoch)
-                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=-1), global_step=epoch)
+                        self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(), global_step=epoch)
+                        self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(), global_step=epoch)
                         histo_vals = funcs.sample_normal(self.ac.pi.mu, self.ac.pi.std)
                     
                     self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)

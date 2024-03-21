@@ -1,17 +1,12 @@
 import os
 import subprocess
-from tensorboard import program
 from kivy.app import App
-from kivy.lang import Builder
 from kivy.properties import ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
-from kivy.uix.textinput import TextInput
-from kivy.uix.widget import Widget
 
 class LauncherGUI(BoxLayout):
     def __init__(self, **kwargs):
@@ -27,7 +22,7 @@ class TensorboardApp(App):
     def __init__(self, **kwargs):
         super(TensorboardApp, self).__init__(**kwargs)
         self.tensorboard_proc = None
-        self.tensorboard_logfile_dir = ''
+        self.tensorboard_logfile_dir = ''     
 
     def build(self):
         return LauncherGUI()

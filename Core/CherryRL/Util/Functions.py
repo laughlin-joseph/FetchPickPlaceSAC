@@ -53,9 +53,11 @@ def get_environment_shape(agent):
     act_dim = 0
     agent.action_discrete = False
     agent.num_discrete_actions = 0
-
+    agent.obs_not_dict = True
+    
     if isinstance(env.observation_space, gym.spaces.dict.Dict):
         obs_dim = np.array(env.observation_space['observation'].shape)
+        agent.obs_not_dict = False
     elif isinstance(env.observation_space, gym.spaces.box.Box):
         obs_dim = np.array(env.observation_space.shape)
     elif isinstance(env.observation_space, gym.spaces.discrete.Discrete):
@@ -72,12 +74,12 @@ def get_environment_shape(agent):
         act_dim =  np.array(env.action_space.shape)
     elif isinstance(env.action_space, gym.spaces.discrete.Discrete):
         act_dim =  np.array(1).reshape(1,)
+        agent.num_discrete_actions = np.array(env.action_space.n).reshape(1,)
         agent.action_discrete = True
-        agent.num_discrete_actions = env.action_space.n
     else:
         act_dim =  np.array(env.action_space.shape)
-    
-    return obs_dim, act_dim
+    agent.obs_dim = obs_dim
+    agent.act_dim = act_dim
 
 def get_latest_frames(directory, file_extension):
     vid_path =  max((os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(file_extension)), 

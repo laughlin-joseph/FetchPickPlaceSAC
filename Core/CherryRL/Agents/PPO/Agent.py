@@ -54,8 +54,7 @@ class PPOAgent:
         self.target_kl = target_kl
 
         #Configure obs and act dims.
-        self.obs_not_dict = not isinstance(self.env.observation_space, spaces.dict.Dict)
-        self.obs_dim, self.act_dim = funcs.get_environment_shape(self)
+        funcs.get_environment_shape(self)
 
         #Create AC nets.
         self.ac = nets.MLPActorCritic(self, hidden_sizes, activation=nn.Tanh)    
@@ -93,17 +92,17 @@ class PPOAgent:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    # Set up function for computing PPO policy loss
+    #Policy loss function.
     def compute_loss_pi(self, data):
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
 
-        # Policy loss
+        #Policy loss
         pi, logp = self.ac.pi(obs, act)
         ratio = torch.exp(logp - logp_old)
         clip_adv = torch.clamp(ratio, 1-self.clip_ratio, 1+self.clip_ratio) * adv
         loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
 
-        # Useful extra info
+        #Useful extra info
         approx_kl = (logp_old - logp).mean().item()
         ent = pi.entropy().mean().item()
         clipped = ratio.gt(1+self.clip_ratio) | ratio.lt(1-self.clip_ratio)
@@ -112,7 +111,7 @@ class PPOAgent:
 
         return loss_pi, pi_info
 
-    # Set up function for computing value loss
+    #Value loss function.
     def compute_loss_value(self, data):
         obs, ret = data['obs'], data['ret']
         return ((self.ac.value(obs) - ret)**2).mean()
@@ -120,21 +119,20 @@ class PPOAgent:
     def update(self):
         data = self.epoch_buffer.get()
         loss_pi, loss_value = 0,0
-        pi_l_old, _ = self.compute_loss_pi(data)
-        pi_l_old = pi_l_old.item()
-
-        # Train policy with multiple steps of gradient descent
+        
+        #Train Policy.
         for i in range(self.train_pi_iters):
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(data)
             kl = pi_info['kl']
             if kl > 1.5 * self.target_kl:
-                print('Early termination at step %d due to reaching max divergence.'%i)
+                #Consider increasing target_kl if this is hit often and learning curves are flat.
+                print('INFO: Early termination at step %d due to reaching max divergence.'%i)
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
 
-        # Value function learning
+        #Value function learning.
         for i in range(self.train_valfunc_iters):
             self.valfunc_optimizer.zero_grad()
             loss_value = self.compute_loss_value(data)
@@ -176,37 +174,40 @@ class PPOAgent:
     def train(self):
         # Prepare for interaction with environment
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        o, info = self.env.reset()
+        obs, info = self.env.reset()
+        o  = obs if self.obs_not_dict else obs['observation']
         ep_ret, ep_len = 0,0
 
-        # Main loop: collect experience in env and update/log each epoch
+        #Run each epoch
         for epoch in range(self.epochs):
             for t in range(self.steps_per_epoch):
                 a, val, logp = self.ac.step(o)
 
-                o_next, r, terminated, truncated, info = self.env.step(a)
+                obs_next, r, terminated, truncated, info = self.env.step(a)
+                o_next  = obs_next if self.obs_not_dict else obs_next['observation']
                 ep_ret += r
                 ep_len += 1
 
                 #Add transition to buffer.
                 self.epoch_buffer.store(o, a, r, val, logp)
             
-                #Update observation from step.
+                #Update to latest observation.
                 o = o_next
 
                 epoch_ended = t==self.steps_per_epoch-1
 
                 if terminated or truncated or epoch_ended:
                     if epoch_ended and not(terminated or truncated):
-                        print('Warning: Premature episode end due to end of epoch at %d steps.' % ep_len)
+                        print('INFO: Premature episode end due to end of epoch at %d steps.' % ep_len)
                         _, val, _ = self.ac.step(torch.as_tensor(o, dtype=torch.float32))                        
                     else:
                         val = 0
                     self.epoch_buffer.finish_path(val)
-                    o, info = self.env.reset()
+                    obs, info = self.env.reset()
+                    o  = obs if self.obs_not_dict else obs['observation']
                     ep_ret, ep_len = 0,0
 
-            # Perform PPO update!
+            #Update
             ep_loss_pi, ep_loss_value = self.update()       
             
             #Save model
@@ -230,8 +231,8 @@ class PPOAgent:
                     dist, _ = self.ac.pi(test_o)
                     histo_vals = dist.sample((100,))
                 else:
-                    self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(axis=-1), global_step=epoch)
-                    self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(axis=-1), global_step=epoch)
+                    self.writer.add_scalar('Mu Average', self.ac.pi.mu.mean(), global_step=epoch)
+                    self.writer.add_scalar('Sigma/std_dev Average', self.ac.pi.std.mean(), global_step=epoch)
                     histo_vals = funcs.sample_normal(self.ac.pi.mu, self.ac.pi.std)
                     
                 self.writer.add_histogram('Action Sampling Distribution', histo_vals, global_step=epoch)

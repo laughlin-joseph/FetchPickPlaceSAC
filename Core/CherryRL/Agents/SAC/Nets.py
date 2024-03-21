@@ -57,7 +57,7 @@ class SquashedGaussianMLPActor(nn.Module):
         self.num_dis_actions = num_dis_actions
 
         if discrete:
-            self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([num_dis_actions]), activation, None)
+            self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(num_dis_actions), activation, None)
             self.soft_max = nn.Softmax(-1)
         else:
             self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
@@ -125,7 +125,7 @@ class MLPQFunction(nn.Module):
         self.discrete = discrete
         self.num_dis_actions = num_dis_actions
         if discrete:
-            self.q = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([num_dis_actions]), activation)            
+            self.q = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(num_dis_actions), activation)            
         else:
             #Cat obs and act dims for input layer, add hidden layers, add output Q.
             self.q = funcs.mlp(list(obs_dim + act_dim) + list(hidden_sizes) + list([1]), activation)
