@@ -75,13 +75,6 @@ Compared to:
 
 Results:
 <video src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.gif?raw=true" width="250" height="250" controls></video>
-<video width="200px" height="200px" controls> 
-    <source alt="FPP Performance without HER" src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.gif" type="video/gif">     
-</video>
-VS
-<video width="200px" height="200px" controls> 
-    <source alt="FPP Performance with HER" src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/Working.gif" type="video/gif">     
-</video>  
 
   
 ### Proximal Policy Optimization  
