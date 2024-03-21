@@ -73,7 +73,8 @@ Compared to:
 ![Learning curve with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPP_20_Epc_LC_HER_SPARSE.PNG?raw=true)
 ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
 
-Results:  
+Results:
+<video src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.gif" width="250" height="250" controls></video>
 <video width="200px" height="200px" controls> 
     <source alt="FPP Performance without HER" src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.gif" type="video/gif">     
 </video>
