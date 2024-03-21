@@ -74,24 +74,9 @@ Compared to:
 ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
 
 Results:  
-<table>
-<thead>
-<tr>
-<th>Without HER</th>
-<th>With HER</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<video src="https://github.com/laughlin-joseph/RLExDev/assets/113724767/70b452cf-39cb-4fdb-ac1b-8978387f8399" controls></video>
-</td>
-<td>
-<video src="https://github.com/laughlin-joseph/RLExDev/assets/113724767/d8a08719-08bd-4562-9b56-54420f8ca85a" controls></video>
-</td>
-</tr>
-</tbody>
-</table>  
+| Without HER      | With HER |
+| ----------- | ----------- |
+| [Header](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif)      | [Title](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif)       |
   
 ### Proximal Policy Optimization  
 **Discrete:**  
