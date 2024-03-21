@@ -74,7 +74,7 @@ Compared to:
 ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
 
 Results:  
-> **Without Hindsight:** ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.mp4?raw=true)
+> **Without Hindsight:** ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.mp4)
   
 ### Proximal Policy Optimization  
 **Discrete:**  
