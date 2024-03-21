@@ -63,20 +63,36 @@ directory by default using a date and time naming convention.
 **Discrete:**  
 Though initially designed for continuous environments this repo contains an implementation capable of handling them.  
 
+| Discrete SAC Learning Curve | Discrete SAC Critic | Discrete SAC Reward | CartPole Result |
+| ----------- | ----------- | ----------- | ----------- |
+| ![DISC SAC Learning Curve](https://github.com/laughlin-joseph/ProjectAssets/blob/master/CARTPOLE_SAC_DISC/CriticUselessLC.PNG?raw=true) | ![DISC SAC Critic](https://github.com/laughlin-joseph/ProjectAssets/blob/master/CARTPOLE_SAC_DISC/CriticSignalSmall.PNG?raw=true) | ![DISC SAC Reward](https://github.com/laughlin-joseph/ProjectAssets/blob/master/CARTPOLE_SAC_DISC/RewLearnForget.PNG) | ![DISC SAC BEST RESULT](https://github.com/laughlin-joseph/ProjectAssets/blob/master/CARTPOLE_SAC_DISC/NotGreat.gif) |  
+
 **Continuius**  
-This is where the SAC algorithm shines.  
-![Learning curve without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACSparseNoHerNoLearn.PNG?raw=true) 
-![Reward without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACNoHERRew.PNG?raw=true)  
+Soft Actor Critic was designed to handle high dimensionality action and observation spaces. It is an off policy algorithm with learns 2 Q functions and a policy for action selection.  
+In this repository we have an implementation of SAC which has aceess to both a Hindsight Expereince Replay buffer and a Prioritized Experience Replay buffer.  
+Here we explore using SAC with HER in a **sparse reward environment**, I.e. an environment where success reward signals are rare.  
+Below are training results from running the SAC agent against mujoco robotics FetchPickAndPlace-v2 environment, a sparse reward environment.  
+  
+| Learning Curve Without HER | Reward without HER |
+| ----------- | ----------- |
+| ![Learning curve without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACSparseNoHerNoLearn.PNG?raw=true) | ![Reward without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACNoHERRew.PNG?raw=true) |  
+  
+Without the benefit of hindsight experience replay our agent fails to learn much after 200 epochs
   
 Compared to:  
+| Learning Curve With HER | Reward with HER |
+| ----------- | ----------- |
+| ![Learning curve with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPP_20_Epc_LC_HER_SPARSE.PNG?raw=true) |  ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true) |
   
-![Learning curve with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPP_20_Epc_LC_HER_SPARSE.PNG?raw=true)
-![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
-
+However, when using HER and running for the same number of epochs we can see the agent learns relatively quickly.  
+  
 Results:  
 | Without HER | With HER |
 | ----------- | ----------- |
-| ![Without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif) | ![With HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif) |
+| ![Without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif) | ![With HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif) |  
+
+The results of using HER in a sparse reward environnments are rather clear. Instead of essentially being told that everything the agent does is wrong, with HER, the agent is able to learn from its mistakes.  
+Much like a boxer practicing with focus mitts, the robotic agent learns to move its arm and manipulator to a given location even if that location is not the desired end goal.
   
 ### Proximal Policy Optimization  
 **Discrete:**  
