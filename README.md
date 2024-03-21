@@ -84,10 +84,10 @@ Results:
 <tbody>
 <tr>
 <td>
-<video src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif" controls></video>
+<video src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif?raw=true" controls></video>
 </td>
 <td>
-<video src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif" controls></video>
+<video src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/WorkingSmall.gif?raw=true" controls></video>
 </td>
 </tr>
 </tbody>
