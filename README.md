@@ -65,7 +65,16 @@ Though initially designed for continuous environments this repo contains an impl
 
 **Continuius**  
 This is where the SAC algorithm shines.  
+![Learning curve without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACSparseNoHerNoLearn.PNG?raw=true) 
+![Learning curve without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACSparseNoHerNoLearn.PNG?raw=true)  
+  
+Compared to:  
+  
 ![Learning curve with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPP_20_Epc_LC_HER_SPARSE.PNG?raw=true)
+![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
+
+Results:  
+> **Without Hindsight:** ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.mp4?raw=true)
   
 ### Proximal Policy Optimization  
 **Discrete:**  
