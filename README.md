@@ -73,9 +73,25 @@ Compared to:
 ![Learning curve with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPP_20_Epc_LC_HER_SPARSE.PNG?raw=true)
 ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
 
-Results:
-![Result Without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif)  
-
+Results:  
+<table>
+<thead>
+<tr>
+<th>Without HER</th>
+<th>With HER</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+![Result Without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif)
+</td>
+<td>
+![Result Without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/StruggleSmall.gif)
+</td>
+</tr>
+</tbody>
+</table>  
   
 ### Proximal Policy Optimization  
 **Discrete:**  
