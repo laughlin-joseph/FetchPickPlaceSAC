@@ -66,7 +66,7 @@ Though initially designed for continuous environments this repo contains an impl
 **Continuius**  
 This is where the SAC algorithm shines.  
 ![Learning curve without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACSparseNoHerNoLearn.PNG?raw=true) 
-![Learning curve without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACSparseNoHerNoLearn.PNG?raw=true)  
+![Reward without HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/SACNoHERRew.PNG?raw=true)  
   
 Compared to:  
   
@@ -74,9 +74,14 @@ Compared to:
 ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/FPPReward.PNG?raw=true)  
 
 Results:  
-**Without Hindsight:** ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.gif?raw=true)
+<video width="200px" height="200px" controls> 
+    <source alt="FPP Performance without HER" src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_NO_HER/Struggle.gif" type="video/gif">     
+</video>
 VS
-**With Hindsight:** ![Reward with HER](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/Working.gif?raw=true)
+<video width="200px" height="200px" controls> 
+    <source alt="FPP Performance with HER" src="https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_SAC_CONT_SPARSE/Working.gif" type="video/gif">     
+</video>  
+
   
 ### Proximal Policy Optimization  
 **Discrete:**  
