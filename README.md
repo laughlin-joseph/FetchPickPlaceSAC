@@ -56,7 +56,7 @@ Pickle files, Tensorboard logging data, and test sequence video files are saved 
 **Discrete:**  
 Though initially designed for continuous environments this repo contains an implementation capable of handling them. Below are the results of running a SAC discrete agent against the CartPole-v1 gymnasium environment. The agent is stable and learns with time however it takes quite a while to train it.  
   
-This experiment was run for 200 epochs, with 12500 steps per epoch, and 250 steps max per episode. Epoch wall time was roughly 40 minutes, under minimal system load outside of training.  
+> This experiment was run for 200 epochs, with 12500 steps per epoch, and 250 steps max per episode. Epoch wall time was roughly 40 minutes, under minimal system load outside of training.  
   
 | Discrete SAC Learning Curve | Discrete SAC Critic | Discrete SAC Reward | CartPole Result |
 | ----------- | ----------- | ----------- | ----------- |
@@ -100,7 +100,9 @@ Much like a boxer practicing with focus mitts, the robotic agent learns to move 
 ### Proximal Policy Optimization  
 **Discrete:**  
   
-PPO is an on-policy algorithm, this particular implementation computes reward-to-go and action advantage over the course of an entire epoch, however per-episode and even per-reward updates are possible according to the algorithm as described in the paper [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347) under section 5 algorithm 1. In this experiment a PPO agent was trained in the CartPole-v1 for 200 epochs with 12500 steps per epoch, a max of 250 steps per episode. Each epoch ran for approximately 15 minutes, a significant improvement over discrete SAC.  
+PPO is an on-policy algorithm, this particular implementation computes reward-to-go and action advantage over the course of an entire epoch, however per-episode and even per-reward updates are possible according to the algorithm as described in the paper [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347) under section 5 algorithm 1.  
+  
+> In this experiment a PPO agent was trained in the CartPole-v1 for 200 epochs with 12500 steps per epoch, a max of 250 steps per episode. Each epoch ran for approximately 15 minutes, a significant improvement over discrete SAC.  
   
 See the graphs below for a glimpse of how things went.  
   
@@ -117,7 +119,8 @@ So far we've seen that SAC excels at operating in high dimensional continuous ob
 PPO can be used in both discrete and continuous action environments, in fact the means by which this is achieved has been adapted to update SAC so that it can operate in discrete environments.  
 In discrete environments the actor network outputs logits for each possible discrete action based on a given observation, these odds are then used to create a categorical distribution from which an action is sampled during evaluation time, observations, actions, rewards, Qvals, and action log probabilities are stored in a buffer for later rollout. Trajectory rollouts are then performed to calculate action advantage, which is then used in the clipped PPO objective function to scale the ratio of new and old log probabilities. Advantageous changes have their probabilities increased, harmful changes become less likely, and overall changes are limited by the clip operator. Continuous environments are similar, however instead of calculating logits and log probabilities for all possible actions, the actor net outputs a mean and standard deviation.  These values are used to construct a Gaussian distribution that is used for action sampling, the log probabilities of these actions are calculated during optimization and used accordingly.  
 
-Here we have the results of running a PPO agent for 200 epochs, 5000 steps per epoch, with 50 steps per episode max against the sparse FetchPickAndPlace-v2 environment.  
+> Here we have the results of running a PPO agent for 200 epochs, 5000 steps per epoch, with 50 steps per episode max against the sparse FetchPickAndPlace-v2 environment.
+   
 Just below that we have the same test run against the **dense** version of the same environment. Both environments are goal aware, the agents are fed this information by concatenating the observations with their intended goals.  
   
 | Continuous Sparse PPO Learning Curve | Continuous Spsrse PPO Histogram | Continuous Sparse PPO Reward | Fetch Pick Place Sparse Result |
@@ -136,7 +139,7 @@ Yet, with a meaningful reward signal the algorithm performs far better. The hist
 
 Individually, nearly every aspect of machine learning is fascinating. How does a simple linear function, such as a line, learn? Linear algebra solved this issue ages ago with ATAx=Atb, and a single neuron network brought the question into the domain of deep learning. Now we optimize Wtx+b, the modern cousin of mx+b, after it is fed through a series of activation functions to end up representing a high dimensionality function, a function approximation if you will.  From the days of the relatively simple [Neocognitron](https://www.youtube.com/watch?v=KAazjZoiCd0) to the revolutionary publishing of [Attention Is All You Need](https://arxiv.org/abs/1706.03762) one thing is clear, every discovery and advancement depends on that which came before it.  
   
-Rainbow DQN, booting methods, ensembles of traditional statistical models, all of these show us that individual discoveries can be combined to find an often radically efficient solution to what appears to be an intractable issue. Many RL algorithms still struggle to solve problems that classical control has solved decades ago. However, the idea of a general learner that can be adapted to solve seemingly endless problems is all too attractive of a prize to rest of past discoveries. In these experiments we've seen how HER, a seemingly counterintuitive idea, can be added to a very powerful algorithm to aid it in solving a difficult problem of control. 
+Rainbow DQN, boosting methods, ensembles of traditional statistical models, and stacks of networks, all of these show us that individual discoveries can be combined to find an often radically efficient solution to what appears to be an intractable issue. Many RL algorithms still struggle to solve problems that classical control has solved decades ago. However, the idea of a general learner that can be adapted to solve seemingly endless problems is all too attractive of a prize to rest of past discoveries. In these experiments we've seen how HER, a seemingly counterintuitive idea, can be added to a very powerful algorithm to aid it in solving a difficult problem of control. 
   
 It is my belief that today's existing problems can be addressed in a similar fashion. By combining different known solutions with new ideas led by the thinking that gave rise to the solutions we presently have it will be possible to go beyond the limitations of today's technology where new impossible problems will be found. It is only by learning, experimenting, failing, and sharing our results that we can hope to achieve these breakthroughs. To that end, please send any suggestions, bug fixes, corrections, or observations to my email address found in my profile. Beyond that, clone this repo, open it, and make something better to share, if you do, kindly mention me in the readme.  
   
