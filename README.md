@@ -131,8 +131,8 @@ So far we've seen that SAC accels at operating in high dimensional continuous ob
 | ![CONT_DENSE_PPO Learning Curve](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/LearningCurve.PNG) | ![CONT_DENSE PPO Histogram](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/Histo.PNG) | ![CONT_DENSE PPO Reward](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/Reward.PNG) | ![CONT_DENSE PPO BEST RESULT](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/RenderSmall.gif) |  
   
 ### Special thanks  
-![Farama Foundation](https://farama.org/)  
-![OpeAI](https://github.com/openai)  
-![Alexander Van de Kleut](https://github.com/avandekleut)  
-![Petros Christodoulou](https://github.com/p-christ)  
-![Haibin Zhou et. al.](https://github.com/coldsummerday)  
+[Farama Foundation](https://farama.org/)  
+[OpeAI](https://github.com/openai)  
+[Alexander Van de Kleut](https://github.com/avandekleut)  
+[Petros Christodoulou](https://github.com/p-christ)  
+[Haibin Zhou et. al.](https://github.com/coldsummerday)  
