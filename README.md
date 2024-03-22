@@ -80,8 +80,9 @@ It is always wise to learn from our failures.
   
 **Continuius**  
 Soft Actor Critic was designed to handle high dimensionality action and observation spaces. It is an off policy algorithm with learns 2 Q functions and a policy for action selection.  
+SAC is an entropy regularized algorithm, it adds scaled entropy of a selected action to the Q value for said action and attempts to maximize botht the quality of the action and the entropy of the distribution it was selected from. This is done to maximize expected return and randomness while operating in and exploring an environment.  
 In this repository we have an implementation of SAC which has aceess to both a Hindsight Expereince Replay buffer and a Prioritized Experience Replay buffer.  
-Here we explore using SAC with HER in a **sparse reward environment**, I.e. an environment where success reward signals are rare.  
+Here we explore using SAC with HER in a **sparse reward environment**, i.e. an environment where success reward signals are rare.  
 Below are training results from running the SAC agent against mujoco robotics FetchPickAndPlace-v2 environment, a sparse reward environment.  
   
 | Learning Curve Without HER | Reward Without HER |
@@ -109,7 +110,7 @@ Much like a boxer practicing with focus mitts, the robotic agent learns to move 
 ### Proximal Policy Optimization  
 **Discrete:**  
   
-PPO is an on policy algorithm, this particular implementation computes reward-to-go and action advantage over the course of an entire epoch, however per-episode and even per-reward updates are possible according to the algorithm as described in the paper ![Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347) under section 5 algorithm 1. In this experiment a PPO agent was trained in the CartPole-v1 for 200 epochs with 12500 steps per epoch, a max of 250 steps per episode. Each epoch ran for approximately 15 minutes, a significant improvement over discrete SAC.  
+PPO is an on policy algorithm, this particular implementation computes reward-to-go and action advantage over the course of an entire epoch, however per-episode and even per-reward updates are possible according to the algorithm as described in the paper [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347) under section 5 algorithm 1. In this experiment a PPO agent was trained in the CartPole-v1 for 200 epochs with 12500 steps per epoch, a max of 250 steps per episode. Each epoch ran for approximately 15 minutes, a significant improvement over discrete SAC.  
 See the graphs below for a glimpse of how things went.
   
 | Discrete PPO Learning Curve | Discrete PPO Reward | CartPole Result |
@@ -120,15 +121,24 @@ PPO performs quite well in this environment, especially when compared with SAC's
 So far we've seen that SAC accels at operating in high dimensional continuous observation and action spaces where near term decisions matter more than future decisions. By contrast, PPO seems to handle more simple problems where starting conditions and subsequent actions all matter in particular sequence for the sake of acheiving a given goal and does so with a higher degree of sample and compute efficiency. At least, the aforementioned is true of this repository's implementations.
   
 **Continuius**  
+  
+PPO can be used in both discrete and continuous action environments, in fact the means by which this is achieved has been adapted to update SAC so that it can operate in discrete environments.  
+In discrete environments the actor network outputs logits for each possible discret action based on a given observation, these odds are then used to create a categorical distribution from which an action is sampled during evaluation time, observations, actions, rewards, Qvals, and action log probabilities are stored in a buffer for later rollout. Trajectory rollouts are then performed to calculate action advantage, which is then used in the the clipped PPO objective function to scale the ratio of new and old log probabilities. Advantageous changes have their probabilities increased, harmful changes become less likely, overall changes are limited by the clip operator. Continuous environments are similar, however instead of calculating logits and log probabilities for all possible actions, the actor net outputs a mean and standard deviation.  These values are used to construct a Gaussian distribution that is used for action sampling, the log probabilities of these actions are calcualted during optimization and used accordingly.  
 
+Here we have the results of running a PPO agent for 200 epochs, 5000 steps per epoch, with 50 steps per episode max against the sparse FetchPickAndPlace-v2 environment.  
+Just below that we have the same test run against the **dense** version of the same environment. Both environments are goal aware, the agents are fed this information by concatenating the observations with their intended goals.  
+  
 | Continuous Sparse PPO Learning Curve | Continuous Spsrse PPO Histogram | Continuous Sparse PPO Reward | Fetch Pick Place Sparse Result |
 | ----------- | ----------- | ----------- | ----------- |
 | ![CONT_SPARSE_PPO Learning Curve](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/LearningCurve.PNG) | ![CONT_SPARSE PPO Histogram](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/Histo.PNG) | ![CONT_SPARSE PPO Reward](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/Reward.PNG) | ![CONT_SPARSE PPO BEST RESULT](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/RenderSmall.gif) |  
-
-
+  
+PPO, in it's basic form doesn't handle sparse environments very well.  
+  
 | Continuous Dense PPO Learning Curve | Continuous Dense PPO Histogram | Continuous Dense PPO Reward | Fetch Pick Place Dense Result |
 | ----------- | ----------- | ----------- | ----------- |
 | ![CONT_DENSE_PPO Learning Curve](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/LearningCurve.PNG) | ![CONT_DENSE PPO Histogram](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/Histo.PNG) | ![CONT_DENSE PPO Reward](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/Reward.PNG) | ![CONT_DENSE PPO BEST RESULT](https://github.com/laughlin-joseph/ProjectAssets/blob/master/FPP_PPO_SPARSE/RenderSmall.gif) |  
+  
+Yet, with a meaningful reward signal the algorithm performs far better, still, nowhere near as well as SAC with HER.  
   
 ### Special thanks  
 [Farama Foundation](https://farama.org/)  
