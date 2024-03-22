@@ -28,7 +28,7 @@ class Actor(nn.Module, ABC):
 class MLPCategoricalActor(Actor):
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
-        self.logits_net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list([act_dim]), activation)
+        self.logits_net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(act_dim), activation)
 
     def _distribution(self, obs):
         logits = self.logits_net(obs)
@@ -99,11 +99,11 @@ class MLPActorCritic(nn.Module):
         self.device = agent.device
 
         if agent.action_discrete:
-            self.pi = MLPCategoricalActor(agent.obs_dim, agent.num_discrete_actions, hidden_sizes, activation)
+            self.pi = MLPCategoricalActor(agent.net_obs_dim, agent.num_discrete_actions, hidden_sizes, activation)
         else:
-            self.pi = MLPGaussianActor(agent.obs_dim, agent.act_dim, hidden_sizes, activation)
+            self.pi = MLPGaussianActor(agent.net_obs_dim, agent.act_dim, hidden_sizes, activation)
 
-        self.value  = MLPCritic(agent.obs_dim, hidden_sizes, activation)
+        self.value  = MLPCritic(agent.net_obs_dim, hidden_sizes, activation)
 
     def step(self, obs):
         obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)

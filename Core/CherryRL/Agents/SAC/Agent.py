@@ -3,11 +3,12 @@ import numpy as np
 import datetime
 import torch
 import gymnasium.spaces as spaces
+import CherryRL.Agents.Base as Base
 import CherryRL.Agents.SAC.Nets as nets
 import CherryRL.Util.Functions as funcs
 import CherryRL.Util.Data as data
 
-class SACAgent:
+class SACAgent(Base.BaseAgent):
     def __init__(self, env, hidden_sizes=[512,512], seed=1,
                  epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
                  gamma=0.95, polyak=0.9995, lr=5e-4, temp_init=1.0, ent_pen_scale=0.5, q_clip=0.5, log_max=2, log_min=-10,
@@ -17,6 +18,11 @@ class SACAgent:
                  start_exploration_steps=25000, update_after_steps=10000, update_every_steps=100,
                  run_tests_and_record=False, enable_logging=False, test_every_epochs=10, done_at_goal=False):
         
+        super(SACAgent, self).__init__(env, seed,
+                                epochs, steps_per_epoch, max_ep_len, save_freq_epoch,
+                                add_goal_to_obs, use_HER, use_PER,
+                                run_tests_and_record, test_every_epochs, done_at_goal)
+
         if enable_logging:
             self.log = enable_logging
             self._tboard_started = False
@@ -32,24 +38,14 @@ class SACAgent:
             params.update({'env_name': env_name})
             self.writer.add_text('ENV:', env_name)
             self.writer.add_text('Agent Parameters:',str(params))
-
-        #Check for CUDA.
-        self.device = funcs.get_device()
-
-        #Envs.
-        self.env = env
-        self.env_name = self.env.spec.id
-        funcs.set_dirs(self)
         
-        #Set HER usage.
-        self.use_HER = use_HER
+        #Set additional HER usage, switch set in BaseAgent.
         self.HER_obs_pr = HER_obs_pr
         self.HER_rew_func = HER_rew_func
         self.HER_strat = HER_strat
         self.HER_k = HER_k
 
-        #Set PER usage.
-        self.use_PER = use_PER
+        #Set additional PER usage, switch set in BaseAgent.
         self.PER_Alpha = PER_Alpha
         self.PER_Beta = PER_Beta
         self.PER_Epsilon = PER_Epsilon
@@ -57,7 +53,6 @@ class SACAgent:
         #Set Gen Buffer props.
         self.replay_buffer_size = replay_buffer_size
         self.batch_size = batch_size
-        self.add_goal_to_obs = add_goal_to_obs
         if (self.use_HER and self.use_PER):
             raise ValueError('Cannot use HER and PER at the same time.')
 
@@ -72,39 +67,21 @@ class SACAgent:
         self.log_min = log_min
 
         #Configure obs, act, and goal dims if required for HER.
-        #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.        
-        funcs.get_environment_shape(self)
-
-        if self.use_HER or self.add_goal_to_obs:
-            if self.obs_not_dict:
-                if not self.HER_obs_pr and not self.add_goal_to_obs:
-                    raise ValueError('Cannot use HER without goal information. HER_obs_pr is not defined.')
+        #See https://robotics.farama.org/envs/fetch/ for information regarding expected dims and types.
+        if self.use_HER and self.obs_not_dict:
+                if not self.HER_obs_pr:
+                    raise ValueError('Cannot use HER without goal information. HER_obs_pr is not defined: takes obs, returns desired goal, achieved goal.')
                 else:
                     test_ob = torch.rand(tuple(self.obs_dim)).uniform_(-1, 1)
                     res = self.HER_obs_pr(test_ob)
                     if not isinstance(res, tuple):
                         raise ValueError('HER_obs_pr must return a tuple containing 2 numpy arrays: desired goal, and achieved goal.')
                     self.goal_dim= np.array(res[0].shape)
-            else:
-                self.goal_dim = np.array(self.env.observation_space['desired_goal'].shape)
-            
-            self.net_obs_dim = self.goal_dim + self.obs_dim
-        else:
-            self.net_obs_dim = self.obs_dim
-
-        #Epochs and episode length
-        self.steps_per_epoch = steps_per_epoch
-        self.epochs = epochs
-        self.max_ep_len = max_ep_len
-        self.save_freq_epoch = save_freq_epoch
 
         #Initial exploration and update cycle management.
         self.start_exploration_steps = start_exploration_steps
         self.update_after_steps = update_after_steps
         self.update_every_steps = update_every_steps
-
-        #Set all seeds.
-        funcs.set_seed(seed)
 
         #Temp tuning setup
         self.log_temp = torch.tensor(np.log(self.temp_init)).to(self.device)
@@ -117,9 +94,7 @@ class SACAgent:
 
         #Create actor critic networks and freeze targets.
         #For discrete SAC see the following paper: https://arxiv.org/pdf/1910.07207.pdf
-        self.ac = nets.MLPActorCritic(self.net_obs_dim, self.act_dim, hidden_sizes,
-                                      discrete=self.action_discrete, num_dis_actions=self.num_discrete_actions,
-                                      log_max=self.log_max, log_min=self.log_min)
+        self.ac = nets.MLPActorCritic(self,hidden_sizes)
         self.ac.to(self.device)
 
         if self.log:
@@ -139,14 +114,6 @@ class SACAgent:
 
         #Experience replay buffer.
         self.configure_buffer()
-
-        #Test env wrap for recording and test data loading.
-        self.run_tests_and_record = run_tests_and_record
-        self.test_every_epochs = test_every_epochs
-        self.done_at_goal = done_at_goal
-        self.test_count = 0
-        if self.run_tests_and_record:
-            funcs.setup_test_env(self, 'TestRecordings')
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -276,17 +243,16 @@ class SACAgent:
     def configure_buffer(self):
         if self.use_HER:
             self.replay_buffer = data.HindsightExperienceReplayBuffer(
-                obs_dim=self.obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size, device=self.device,
+                obs_dim=self.net_obs_dim, act_dim=self.act_dim, goal_dim=self.goal_dim, size=self.replay_buffer_size, device=self.device,
                 strat=self.HER_strat, HER_obs_pr=self.HER_obs_pr, HER_rew_func=self.HER_rew_func, k=self.HER_k)
             
         elif self.use_PER:
             self.replay_buffer = data.PrioritizedReplayBuffer(
-                obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device,
+                obs_dim=self.net_obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device,
                 alpha=self.PER_Alpha, beta=self.PER_Beta, total_steps=(self.epochs * self.steps_per_epoch))
         
         else:
-            local_obs_dim = self.net_obs_dim if self.add_goal_to_obs else self.obs_dim
-            self.replay_buffer = data.ReplayBuffer(obs_dim=local_obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
+            self.replay_buffer = data.ReplayBuffer(obs_dim=self.net_obs_dim, act_dim=self.act_dim, size=self.replay_buffer_size, device=self.device)
 
     def update(self, data):
         #GD for Q1 and Q2.
@@ -343,93 +309,37 @@ class SACAgent:
         return loss_q.detach(), loss_pi.detach(), temp_loss.detach()
                 
     def get_action(self, o, deterministic=False):
-        shaped = torch.as_tensor(o.reshape(1, *self.net_obs_dim), dtype=torch.float32, device=self.device)
-        action = self.ac.act(shaped, deterministic)
-        if self.action_discrete:
-            action = int(action)
-        else:
-            action = action.reshape(*self.act_dim)
+        action = self.ac.act(o, deterministic)
         return action
-
-    def test_agent(self):
-        #Increment agent test_count
-        reason = ''
-        ep_rew = 0
-        self.test_count += 1
-        #Reset test environment.
-        obs, info = self.test_env.reset()
-        a, r, terminated, truncated, dg = [], 0, False, False, []
-        o = obs if self.obs_not_dict else obs['observation']
-
-        #Begin testing.
-        for _ in range(self.max_ep_len):
-            if self.use_HER or self.add_goal_to_obs:
-                if self.obs_not_dict:
-                    res = self.replay_buffer.HER_obs_pr(obs)
-                    dg = res[0]
-                else:
-                    dg = obs['desired_goal']
-                cato = np.concatenate((o,dg),0)
-                a = self.get_action(cato)
-            else:
-                a = self.get_action(o)
-            
-            obs, r, terminated, truncated, info = self.test_env.step(a)             
-            o = obs if self.obs_not_dict else obs['observation']
-            ep_rew += r
-
-            if self.done_at_goal and info.get('is_success', False):
-                reason = 'Done'
-                break
-            if terminated or truncated:
-                reason = 'Truncated' if truncated else 'Terminated'
-                break
-        if reason:
-            print('\n%s condition reached during testing.' % reason)
-        
-        return ep_rew, info
-            
+    
     def train(self):
         total_steps = self.steps_per_epoch * self.epochs
         start_time, epoch = datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 0
-        obs_Next, info = self.env.reset()
+        obs_next, info = self.env.reset()
         ep_len, ep_q_loss, ep_pi_loss, ep_temp_loss = 0, 0, 0, 0
-        a, r, o_next, done = [], 0, [], 0
+        a, r, o_next, done, dg, ag = [], 0, [], 0, [], []
         test_rew, test_info = 0, None
         terminated, truncated, dg, ag = False, False, [], []
-        o = obs_Next if self.obs_not_dict else obs_Next['observation']
-        if self.add_goal_to_obs:
-                dg, ag = obs_Next['desired_goal'], obs_Next['achieved_goal']
-                cato = np.concatenate((o,dg),0)
+        o = funcs.process_observation(self, obs_next)
         for t in range(total_steps):
-
             #We start off randomly exploring the environment until
             #we pass the number of initial exploration steps. 
             if t < self.start_exploration_steps:
                 a = self.env.action_space.sample()
             else:
-                if self.use_HER or self.add_goal_to_obs:
-                    #    |\__/,|   (`\
-                    #  _.|o o  |_   ) )
-                    #-(((---(((--------
-                    cato = np.concatenate((o,dg),0)
-                    a = self.get_action(cato)
-                else:
-                    a = self.get_action(o)
+                a = self.ac.act(o)
 
             #Perform action in environment.
-            obs_Next, r, terminated, truncated, info = self.env.step(a)
+            obs_next, r, terminated, truncated, info = self.env.step(a)
             
             #Handle Mujoco environment obs.
-            o_next = obs_Next if self.obs_not_dict else obs_Next['observation']
-            if self.add_goal_to_obs:
-                cato_next = np.concatenate((o_next,dg),0)
-            if self.use_HER or self.add_goal_to_obs:
+            o_next = funcs.process_observation(self, obs_next)
+            if self.use_HER:
                 if self.obs_not_dict:
-                    res  = self.replay_buffer.HER_obs_pr(obs_Next)
+                    res  = self.replay_buffer.HER_obs_pr(obs_next)
                     dg, ag = res[0], res[1]
                 else:
-                    dg, ag = obs_Next['desired_goal'], obs_Next['achieved_goal']
+                    dg, ag = obs_next['desired_goal'], obs_next['achieved_goal']
 
             #Update episode return and length.                
             ep_len += 1
@@ -441,12 +351,10 @@ class SACAgent:
             #Send experience to replay buffer.
             if self.use_HER:
                 self.replay_buffer.store(o, a, r, o_next, done, dg, ag)
-            elif self.add_goal_to_obs:
-                self.replay_buffer.store(cato, a, r, cato_next, done)
             else:
                 self.replay_buffer.store(o, a, r, o_next, done)
 
-            #Assign next observation to current .
+            #Assign next observation to current.
             o = o_next
 
             #End of episode handling
@@ -456,9 +364,9 @@ class SACAgent:
                    self.replay_buffer.run_goal_update_strategy(ep_len)
                 
                 #The episode is over, reset the environment.
-                obs_Next, info = self.env.reset()
+                obs_next, info = self.env.reset()
                 r, terminated, truncated, ep_len = 0, False, False, 0
-                o = obs_Next if self.obs_not_dict else obs_Next['observation']
+                o = funcs.process_observation(self, obs_next)
 
             #Update if past initial step threshold and on an update_every_steps multiple
             if t >= self.update_after_steps and t % self.update_every_steps == 0:
@@ -477,7 +385,6 @@ class SACAgent:
                     video_dir = self.test_env.spec.additional_wrappers[0].kwargs['video_folder']
                     frames, rate = funcs.get_latest_frames(video_dir, 'mp4')
                     self.writer.add_video('Recording of latest test:', frames, global_step=epoch, fps=rate)
-
 
                 if self.log:
                     #Loss Scalars

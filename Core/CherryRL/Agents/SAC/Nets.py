@@ -55,14 +55,16 @@ class SquashedGaussianMLPActor(nn.Module):
         self.std = 0
         self.entropy = 0
         self.num_dis_actions = num_dis_actions
+        self.obs_dim = obs_dim
+        self.act_dim = num_dis_actions if discrete else act_dim[0]
 
         if discrete:
-            self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(num_dis_actions), activation, None)
+            self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(self.act_dim), activation, None)
             self.soft_max = nn.Softmax(-1)
         else:
             self.net = funcs.mlp(list(obs_dim) + list(hidden_sizes), activation, activation)
-            self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim[0])
-            self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim[0])            
+            self.mu_layer = nn.Linear(hidden_sizes[-1], self.act_dim)
+            self.log_std_layer = nn.Linear(hidden_sizes[-1], self.act_dim)
 
     def forward(self, obs, deterministic=True, with_logprob=True):
         #For discrete action spaces.
@@ -124,6 +126,8 @@ class MLPQFunction(nn.Module):
         super().__init__()
         self.discrete = discrete
         self.num_dis_actions = num_dis_actions
+        self.obs_dim = obs_dim
+        self.act_dim = num_dis_actions if discrete else act_dim[0]
         if discrete:
             self.q = funcs.mlp(list(obs_dim) + list(hidden_sizes) + list(num_dis_actions), activation)            
         else:
@@ -143,15 +147,17 @@ class MLPQFunction(nn.Module):
         return q
 
 class MLPActorCritic(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden_sizes=[256,256], discrete=False, num_dis_actions=0, activation=nn.ReLU, log_max=2, log_min=-20):
+    def __init__(self, agent, hidden_sizes=[256,256], activation=nn.ReLU):
         super().__init__()
+        self.device = agent.device
 
-        #Build actor, critic1, critic2, targ1, targ2 networksS
-        self.pi = SquashedGaussianMLPActor(obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation, log_max, log_min)
-        self.q1 = MLPQFunction(obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation)
-        self.q2 = MLPQFunction(obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation)
-        self.q1targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation)
-        self.q2targ = MLPQFunction(obs_dim, act_dim, hidden_sizes, discrete, num_dis_actions, activation)
+        #Build actor, critic1, critic2, targ1, targ2 networks.
+        self.pi = SquashedGaussianMLPActor(agent.net_obs_dim, agent.act_dim, hidden_sizes, agent.action_discrete, 
+                                           agent.num_discrete_actions, activation, agent.log_max, agent.log_min)
+        self.q1 = MLPQFunction(agent.net_obs_dim, agent.act_dim, hidden_sizes, agent.action_discrete, agent.num_discrete_actions, activation)
+        self.q2 = MLPQFunction(agent.net_obs_dim, agent.act_dim, hidden_sizes, agent.action_discrete, agent.num_discrete_actions, activation)
+        self.q1targ = MLPQFunction(agent.net_obs_dim, agent.act_dim, hidden_sizes, agent.action_discrete, agent.num_discrete_actions, activation)
+        self.q2targ = MLPQFunction(agent.net_obs_dim, agent.act_dim, hidden_sizes, agent.action_discrete, agent.num_discrete_actions, activation)
         
         #Freeze target networks, these are updated with a Polyak average.
         funcs.freeze_thaw_parameters(self.q1targ)
@@ -159,6 +165,12 @@ class MLPActorCritic(nn.Module):
     
     def act(self, obs, deterministic=False):
         with torch.no_grad():
+            if not isinstance(obs, torch.Tensor):
+                obs = torch.as_tensor(obs.reshape(1, *self.pi.obs_dim), dtype=torch.float32, device=self.device)
             a, _ = self.pi(obs, deterministic, with_logprob=False)
             a = a.cpu().numpy() if isinstance(a, torch.Tensor) else a
+            if self.pi.discrete:
+                a = int(a)
+            else:
+                a = a.reshape(self.pi.act_dim)
             return a

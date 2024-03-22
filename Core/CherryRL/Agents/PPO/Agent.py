@@ -6,17 +6,23 @@ import time
 import torch
 from torch import nn
 from torch.optim import Adam
+import CherryRL.Agents.Base as Base
 import CherryRL.Agents.PPO.Nets as nets
 import CherryRL.Util.Functions as funcs
 import CherryRL.Util.Data as data
 
-class PPOAgent:
+class PPOAgent(Base.BaseAgent):
     def __init__(self, env, hidden_sizes=[512,512], seed=1,
         epochs=200, steps_per_epoch=5000, max_ep_len=50, save_freq_epoch=10,
-        gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,valfunc_lr=1e-3,
-        train_pi_iters=80, train_valfunc_iters=80, lam=0.97, target_kl=0.01,
+        gamma=0.99, clip_ratio=0.2, pi_lr=3e-4, valfunc_lr=1e-3,
+        add_goal_to_obs=False, train_pi_iters=80, train_valfunc_iters=80, lam=0.97, target_kl=0.01,
         run_tests_and_record=False, enable_logging=False, test_every_epochs=10, done_at_goal=False):
-    
+        
+        super(PPOAgent, self).__init__(env, seed,
+                                       epochs, steps_per_epoch, max_ep_len, save_freq_epoch,
+                                       add_goal_to_obs, False, False,
+                                       run_tests_and_record, test_every_epochs, done_at_goal)
+
         #Setup Tensorboard.
         if enable_logging:
             self.log = enable_logging
@@ -32,17 +38,6 @@ class PPOAgent:
             self.writer.add_text('ENV:', env_name)
             self.writer.add_text('Agent Parameters:',str(params))
 
-        #Check for CUDA.
-        self.device = funcs.get_device()
-
-        #Envs.
-        self.env = env
-        self.env_name = self.env.spec.id
-        funcs.set_dirs(self)
-
-        #Set all seeds.
-        funcs.set_seed(seed)
-
         #Set params and constants.
         self.gamma = gamma
         self.lam = lam
@@ -53,33 +48,16 @@ class PPOAgent:
         self.train_valfunc_iters = train_valfunc_iters
         self.target_kl = target_kl
 
-        #Configure obs and act dims.
-        funcs.get_environment_shape(self)
-
         #Create AC nets.
         self.ac = nets.MLPActorCritic(self, hidden_sizes, activation=nn.Tanh)    
         self.ac.to(self.device)            
 
         #Create PPO buffer, set size to steps_per_epoch for online training.
-        self.epoch_buffer = data.PPOBuffer(self.obs_dim, self.act_dim, steps_per_epoch, self.device, gamma, lam)
-
-        #Epochs and episode length.
-        self.steps_per_epoch = steps_per_epoch
-        self.epochs = epochs
-        self.max_ep_len = max_ep_len
-        self.save_freq_epoch = save_freq_epoch
+        self.epoch_buffer = data.PPOBuffer(self.net_obs_dim, self.act_dim, steps_per_epoch, self.device, gamma, lam)
 
         #Optim for trained nets.
         self.valfunc_optimizer = Adam(self.ac.value.parameters(), lr=valfunc_lr)
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
-
-        #Test env wrap for recording and test data loading.
-        self.run_tests_and_record = run_tests_and_record
-        self.test_every_epochs = test_every_epochs
-        self.done_at_goal = done_at_goal
-        self.test_count = 0
-        if self.run_tests_and_record:
-            funcs.setup_test_env(self, 'TestRecordings')
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -140,42 +118,12 @@ class PPOAgent:
             self.valfunc_optimizer.step()
         
         return loss_pi, loss_value
-        
-    def test_agent(self):
-        #Increment agent test_count
-        reason = ''
-        ep_rew = 0
-        self.test_count += 1
-        #Reset test environment.
-        obs, info = self.test_env.reset()
-        a, r, terminated, truncated, dg = [], 0, False, False, []
-        o = obs if self.obs_not_dict else obs['observation']
-
-        #Begin testing.
-        for _ in range(self.max_ep_len):
-
-            a = self.ac.act(o)
-            
-            obs, r, terminated, truncated, info = self.test_env.step(a)             
-            o = obs if self.obs_not_dict else obs['observation']
-            ep_rew += r
-
-            if self.done_at_goal and info.get('is_success', False):
-                reason = 'Done'
-                break
-            if terminated or truncated:
-                reason = 'Truncated' if truncated else 'Terminated'
-                break
-        if reason:
-            print('\n%s condition reached during testing.' % reason)
-        
-        return ep_rew, info
     
     def train(self):
         # Prepare for interaction with environment
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         obs, info = self.env.reset()
-        o  = obs if self.obs_not_dict else obs['observation']
+        o  = funcs.process_observation(self, obs)
         ep_ret, ep_len = 0,0
 
         #Run each epoch
@@ -184,14 +132,14 @@ class PPOAgent:
                 a, val, logp = self.ac.step(o)
 
                 obs_next, r, terminated, truncated, info = self.env.step(a)
-                o_next  = obs_next if self.obs_not_dict else obs_next['observation']
+                o_next  = funcs.process_observation(self, obs_next)
                 ep_ret += r
                 ep_len += 1
 
-                #Add transition to buffer.
+                #Send experience to replay buffer.
                 self.epoch_buffer.store(o, a, r, val, logp)
             
-                #Update to latest observation.
+                #Assign next observation to current.
                 o = o_next
 
                 epoch_ended = t==self.steps_per_epoch-1
@@ -204,7 +152,7 @@ class PPOAgent:
                         val = 0
                     self.epoch_buffer.finish_path(val)
                     obs, info = self.env.reset()
-                    o  = obs if self.obs_not_dict else obs['observation']
+                    o  = funcs.process_observation(self, obs)
                     ep_ret, ep_len = 0,0
 
             #Update

@@ -58,12 +58,19 @@ def get_environment_shape(agent):
     if isinstance(env.observation_space, gym.spaces.dict.Dict):
         obs_dim = np.array(env.observation_space['observation'].shape)
         agent.obs_not_dict = False
+        net_obs_dim = obs_dim
+        if agent.add_goal_to_obs or agent.use_HER:
+            agent.goal_dim = np.array(env.observation_space['desired_goal'].shape)
+            net_obs_dim = agent.goal_dim + obs_dim
     elif isinstance(env.observation_space, gym.spaces.box.Box):
         obs_dim = np.array(env.observation_space.shape)
+        net_obs_dim = obs_dim
     elif isinstance(env.observation_space, gym.spaces.discrete.Discrete):
         obs_dim = np.array(1).reshape(1,)
+        net_obs_dim = obs_dim
     else:
         obs_dim = np.array(env.observation_space.shape)
+        net_obs_dim = obs_dim
 
     if isinstance(env.action_space, gym.spaces.dict.Dict):
         #Not sure this will ever be a thing, would be something like:
@@ -79,6 +86,7 @@ def get_environment_shape(agent):
     else:
         act_dim =  np.array(env.action_space.shape)
     agent.obs_dim = obs_dim
+    agent.net_obs_dim = net_obs_dim
     agent.act_dim = act_dim
 
 def get_latest_frames(directory, file_extension):
@@ -121,6 +129,22 @@ def mlp(sizes, activation, output_activation=nn.Identity):
         if act is not None:
             layers.append(act())
     return nn.Sequential(*layers)
+
+def process_observation(agent, obs):
+    obs_not_dict, add_goal = agent.obs_not_dict, (agent.add_goal_to_obs or agent.use_HER)
+    o = obs if obs_not_dict else obs['observation']
+    
+    if add_goal:
+        if obs_not_dict and agent.use_HER:
+            res = agent.replay_buffer.HER_obs_pr(obs)
+            dg = res[0]
+        else:
+            dg = obs['desired_goal']
+        #    |\__/,|   (`\
+        #  _.|o o  |_   ) )
+        #-(((---(((--------
+        o = np.concatenate((o,dg),0)
+    return o
 
 def sample_categorical(probs, n=100):
     dist = torch.distributions.categorical.Categorical(probs)
