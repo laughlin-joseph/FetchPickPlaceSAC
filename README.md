@@ -50,7 +50,7 @@ Use the basic Tensorboard launcher app to start Tensorboard on saved data. Targe
 Pickle files, Tensorboard logging data, and test sequence video files are saved in the project directory by default using a date and time naming convention.  
   
 ## Implementations and Experiments
-**All agents trained for this experiment were run on a system with an AMD Ryzen 9 3900XT 12-Core Processor running above 4.0 GHz, 32 GB of 2666MHz RAM, and a Nvidia RTX 2080Ti**  
+> **All agents trained for this experiment were run on a system with an AMD Ryzen 9 3900XT 12-Core Processor running above 4.0 GHz, 32 GB of 2666MHz RAM, and a Nvidia RTX 2080Ti**  
   
 ### Soft Actor Critic  
 **Discrete:**  
