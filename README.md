@@ -70,7 +70,7 @@ Therefore, I contend that just because SAC, an off-policy algorithm, can be adap
   
 It is always wise to learn from our failures.  
   
-**Continuius**  
+**continuious**  
   
 Soft Actor Critic was designed to handle high dimensionality action and observation spaces. It is an off-policy algorithm that learns 2 Q functions and a policy for action selection. SAC is an entropy regularized algorithm, it adds the scaled entropy of a selected action to the Q value for said action and attempts to maximize both the quality of the action and the entropy of the distribution it was selected from. This is done to maximize expected return and randomness while operating in and exploring an environment. A temperature parameter is used to scale randomness as the agent learns. 
   
@@ -120,7 +120,7 @@ PPO performs quite well in this environment, especially when compared with SAC's
   
 So far we've seen that SGD SAC excels at operating in high dimensional continuous observation and action spaces where near-term decisions matter more than future decisions. By contrast, PPO seems to handle more simple problems where starting conditions and subsequent actions all matter in a particular sequence for the sake of achieving a given goal and does so with a higher degree of sample and compute efficiency. At least, the aforementioned feels like a reasonable interpretation of this repository's implementations.  
   
-**Continuius**  
+**continuious**  
   
 PPO can be used in both discrete and continuous action environments, in fact, the means by which this is achieved has been adapted to update SAC so that it can operate in discrete environments.  
 In discrete environments the actor network outputs logits for each possible discrete action based on a given observation, these odds are then used to create a categorical distribution from which an action is sampled during evaluation time, observations, actions, rewards, Qvals, and action log probabilities are stored in a buffer for later rollout. Trajectory rollouts are then performed to calculate action advantage, which is then used in the clipped PPO objective function to scale the ratio of new and old log probabilities. Advantageous changes have their probabilities increased, harmful changes become less likely, and overall changes are limited by the clip operator. Continuous environments are similar, however instead of calculating logits and log probabilities for all possible actions, the actor net outputs a mean and standard deviation.  These values are used to construct a Gaussian distribution that is used for action sampling, the log probabilities of these actions are calculated during optimization and used accordingly.  
