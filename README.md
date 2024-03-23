@@ -151,7 +151,7 @@ It is my belief that today's existing conundrums can be addressed in a similar f
   
 ### Special thanks  
 [Farama Foundation](https://farama.org/)  
-[OpeAI](https://github.com/openai)  
+[OpenAI](https://github.com/openai)  
 [Alexander Van de Kleut](https://github.com/avandekleut)  
 [Petros Christodoulou](https://github.com/p-christ)  
 [Haibin Zhou et. al.](https://github.com/coldsummerday)  
