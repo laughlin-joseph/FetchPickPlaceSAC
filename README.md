@@ -4,9 +4,6 @@
 The development of this repository is intended to explore modern reinforcement learning algorithms  
 using gymnasium environments, including gymnasium robotics environments:  
   
-[Gymnasium: https://gymnasium.farama.org/index.html](https://gymnasium.farama.org/index.html)  
-[Robotics: https://robotics.farama.org/index.html](https://robotics.farama.org/index.html)  
-  
 > - Developed using Visual Studio for managing projects and debugging code.  
 > - Tensorboard is used for tracking model metrics during training,  
 > graph visualization, and presenting environment renderings.  
@@ -14,10 +11,13 @@ using gymnasium environments, including gymnasium robotics environments:
 > - The control GUI is written using Kivy.  
 > - Environments are managed using Anaconda.  
   
+[Gymnasium: https://gymnasium.farama.org/index.html](https://gymnasium.farama.org/index.html)  
+[Robotics: https://robotics.farama.org/index.html](https://robotics.farama.org/index.html)  
+  
 Additional algorithms will be added over time and new research will be integrated as  
 it becomes available and necessary.  
   
-## Useage  
+## Usage  
   
 Development with Visual Studio is encouraged as that is what has been used so far.  
 > **If running on a Windows OS use Python version 3.10.13 in a fresh Conda environment!**  
